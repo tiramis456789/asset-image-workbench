@@ -20,6 +20,13 @@ export interface ExifInspectionResult {
 }
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const METADATA_PRIORITY = ['Comment', 'Description', 'Source', 'Title', 'Software', 'Generation_time'];
+const STEALTH_TEXT_HEADERS = new Map<string, { mode: 'alpha' | 'rgb'; compressed: boolean }>([
+  ['stealth_pnginfo', { mode: 'alpha', compressed: false }],
+  ['stealth_pngcomp', { mode: 'alpha', compressed: true }],
+  ['stealth_rgbinfo', { mode: 'rgb', compressed: false }],
+  ['stealth_rgbcomp', { mode: 'rgb', compressed: true }],
+]);
 const TARGET_OPTION_KEYS = new Set(
   [
     'steps',
@@ -45,7 +52,6 @@ const TARGET_OPTION_KEYS = new Set(
     'denoising_strength',
   ].map((key) => key.toLowerCase())
 );
-
 const OPTION_KEY_MAPPING: Record<string, string> = {
   'cfg scale': 'scale',
   cfg_scale: 'scale',
@@ -58,7 +64,6 @@ const OPTION_KEY_MAPPING: Record<string, string> = {
   'denoising strength': 'denoising_strength',
   denoising_strength: 'denoising_strength',
 };
-
 const WRAPPING_PAIRS: Array<[string, string]> = [
   ['[', ']'],
   ['{', '}'],
@@ -75,20 +80,18 @@ export function normalizePromptTag(tag: string) {
   value = value.replace(/^[+-]?\d+(?:\.\d+)?::\s*/, '').trim();
   value = value.replace(/^::/, '').replace(/::$/, '').trim();
 
-  let changed = true;
-  while (changed && value.length > 1) {
-    changed = false;
+  let shouldUnwrap = true;
+  while (shouldUnwrap && value.length > 1) {
+    shouldUnwrap = false;
     for (const [open, close] of WRAPPING_PAIRS) {
       if (value.startsWith(open) && value.endsWith(close)) {
         value = value.slice(1, -1).trim();
-        changed = true;
+        shouldUnwrap = true;
       }
     }
   }
 
-  value = value.replace(/^[()[\]{}]+/, '').replace(/[()[\]{}]+$/, '').trim();
-
-  return value.trim();
+  return value.replace(/^[()[\]{}]+/, '').replace(/[()[\]{}]+$/, '').trim();
 }
 
 export function normalizePromptTags(input: string) {
@@ -106,268 +109,18 @@ function decodeText(bytes: Uint8Array) {
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
 }
 
-function parsePngTextChunks(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer);
-  const metadata: Record<string, string> = {};
-
-  if (!PNG_SIGNATURE.every((value, index) => bytes[index] === value)) {
-    return metadata;
-  }
-
-  let offset = PNG_SIGNATURE.length;
-  while (offset + 8 <= bytes.length) {
-    const length = new DataView(buffer, offset, 4).getUint32(0);
-    const type = decodeText(bytes.slice(offset + 4, offset + 8));
-    const dataStart = offset + 8;
-    const dataEnd = dataStart + length;
-    if (dataEnd > bytes.length) break;
-
-    const chunk = bytes.slice(dataStart, dataEnd);
-    if (type === 'tEXt') {
-      const separator = chunk.indexOf(0);
-      if (separator > 0) {
-        const key = decodeText(chunk.slice(0, separator));
-        const value = decodeText(chunk.slice(separator + 1));
-        metadata[key] = value;
-      }
-    }
-
-    if (type === 'iTXt') {
-      const keyEnd = chunk.indexOf(0);
-      if (keyEnd > 0) {
-        const key = decodeText(chunk.slice(0, keyEnd));
-        let cursor = keyEnd + 1;
-        const compressionFlag = chunk[cursor];
-        cursor += 2;
-        while (cursor < chunk.length && chunk[cursor] !== 0) cursor += 1;
-        cursor += 1;
-        while (cursor < chunk.length && chunk[cursor] !== 0) cursor += 1;
-        cursor += 1;
-        if (compressionFlag === 0 && cursor <= chunk.length) {
-          metadata[key] = decodeText(chunk.slice(cursor));
-        }
-      }
-    }
-
-    offset = dataEnd + 4;
-    if (type === 'IEND') break;
-  }
-
-  return metadata;
+function encodeBytesToText(binary: string) {
+  const chunks = binary.match(/.{1,8}/g) ?? [];
+  return decodeText(new Uint8Array(chunks.map((chunk) => Number.parseInt(chunk, 2))));
 }
 
-async function loadImageData(file: File) {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
-      img.src = url;
-    });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth || image.width;
-    canvas.height = image.naturalHeight || image.height;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return context.getImageData(0, 0, canvas.width, canvas.height).data;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
-
-async function extractStealthInfo(file: File) {
-  const pixels = await loadImageData(file);
-  if (!pixels) return null;
-
-  let binaryData = '';
-  let bufferA = '';
-  let bufferRgb = '';
-  let indexA = 0;
-  let indexRgb = 0;
-  let compressed = false;
-  let mode: 'alpha' | 'rgb' | null = null;
-  let signatureConfirmed = false;
-  let confirmingSignature = true;
-  let readingParamLength = false;
-  let readingParam = false;
-  let readEnd = false;
-  let paramLength = 0;
-
-  for (let index = 0; index < pixels.length; index += 4) {
-    const r = pixels[index];
-    const g = pixels[index + 1];
-    const b = pixels[index + 2];
-    const a = pixels[index + 3];
-
-    bufferA += String(a & 1);
-    indexA += 1;
-
-    bufferRgb += String(r & 1);
-    bufferRgb += String(g & 1);
-    bufferRgb += String(b & 1);
-    indexRgb += 3;
-
-    if (confirmingSignature) {
-      if (indexA === 'stealth_pnginfo'.length * 8) {
-        const decoded = decodeBinary(bufferA);
-        if (decoded === 'stealth_pnginfo' || decoded === 'stealth_pngcomp') {
-          confirmingSignature = false;
-          signatureConfirmed = true;
-          readingParamLength = true;
-          mode = 'alpha';
-          compressed = decoded === 'stealth_pngcomp';
-          bufferA = '';
-          indexA = 0;
-        }
-      }
-
-      if (confirmingSignature && indexRgb === 'stealth_pnginfo'.length * 8) {
-        const decoded = decodeBinary(bufferRgb);
-        if (decoded === 'stealth_rgbinfo' || decoded === 'stealth_rgbcomp') {
-          confirmingSignature = false;
-          signatureConfirmed = true;
-          readingParamLength = true;
-          mode = 'rgb';
-          compressed = decoded === 'stealth_rgbcomp';
-          bufferRgb = '';
-          indexRgb = 0;
-        } else {
-          readEnd = true;
-        }
-      }
-    } else if (readingParamLength) {
-      if (mode === 'alpha' && indexA === 32) {
-        paramLength = Number.parseInt(bufferA, 2);
-        readingParamLength = false;
-        readingParam = true;
-        bufferA = '';
-        indexA = 0;
-      }
-
-      if (mode === 'rgb' && indexRgb === 33) {
-        const carry = bufferRgb.at(-1) ?? '';
-        paramLength = Number.parseInt(bufferRgb.slice(0, -1), 2);
-        readingParamLength = false;
-        readingParam = true;
-        bufferRgb = carry;
-        indexRgb = carry ? 1 : 0;
-      }
-    } else if (readingParam) {
-      if (mode === 'alpha' && indexA === paramLength) {
-        binaryData = bufferA;
-        readEnd = true;
-      }
-
-      if (mode === 'rgb' && indexRgb >= paramLength) {
-        binaryData = bufferRgb.slice(0, paramLength);
-        readEnd = true;
-      }
-    }
-
-    if (readEnd) break;
-  }
-
-  if (!signatureConfirmed || !binaryData) return null;
-
-  const byteArray = new Uint8Array(binaryData.match(/.{1,8}/g)?.map((chunk) => Number.parseInt(chunk, 2)) ?? []);
-
-  try {
-    if (compressed && 'DecompressionStream' in window) {
-      const stream = new Response(new Blob([byteArray]).stream().pipeThrough(new DecompressionStream('gzip')));
-      return await stream.text();
-    }
-
-    return decodeText(byteArray);
-  } catch {
-    return decodeText(byteArray);
-  }
-}
-
-function decodeBinary(binary: string) {
-  const bytes = binary.match(/.{1,8}/g)?.map((chunk) => Number.parseInt(chunk, 2)) ?? [];
-  return decodeText(new Uint8Array(bytes));
-}
-
-function extractCharacterPrompts(input: Record<string, unknown>) {
-  const results: string[] = [];
-  const collect = (value: unknown) => {
-    if (!value || typeof value !== 'object') return;
-    if (Array.isArray(value)) {
-      value.forEach(collect);
-      return;
-    }
-
-    if ('char_caption' in value && typeof (value as { char_caption?: unknown }).char_caption === 'string') {
-      const caption = normalizePromptText((value as { char_caption: string }).char_caption || '');
-      if (caption) results.push(caption);
-    }
-
-    Object.values(value).forEach(collect);
-  };
-
-  collect(input.v4_prompt);
-  collect(input.v4_negative_prompt);
-  return Array.from(new Set(results));
-}
-
-function normalizePayload(input: Record<string, unknown>, source: string, rawComment?: string): ParsedExifPayload {
-  const prompt = normalizePromptText(String(input.prompt ?? ''));
-  const negativePrompt = normalizePromptText(String(input.uc ?? input.negative_prompt ?? ''));
-  const characterPrompts = extractCharacterPrompts(input);
-  const option: Record<string, string | number> = {};
-  const etc: Record<string, string | number> = {};
-
-  for (const [rawKey, rawValue] of Object.entries(input)) {
-    if (rawValue == null || rawKey === 'prompt' || rawKey === 'uc' || rawKey === 'negative_prompt') continue;
-    const key = OPTION_KEY_MAPPING[rawKey] ?? rawKey;
-    if (TARGET_OPTION_KEYS.has(rawKey.toLowerCase()) || TARGET_OPTION_KEYS.has(key.toLowerCase())) {
-      option[key] = normalizeScalar(rawValue);
-    } else {
-      etc[key] = normalizeScalar(rawValue);
-    }
-  }
-
-  return { prompt, negativePrompt, characterPrompts, option, etc, source, rawComment };
+function readUint32(binary: string) {
+  return Number.parseInt(binary, 2);
 }
 
 function normalizeScalar(value: unknown) {
   if (typeof value === 'number' || typeof value === 'string') return value;
   return JSON.stringify(value);
-}
-
-function parseWebUiParameters(parameters: string) {
-  const lines = parameters.split(/\r?\n/);
-  if (lines.length === 0) return null;
-
-  const negativeIndex = lines.findIndex((line) => line.trim().startsWith('Negative prompt:'));
-  const prompt = negativeIndex > 0 ? lines.slice(0, negativeIndex).join('\n').trim() : lines.join('\n').trim();
-  const negativePrompt = negativeIndex >= 0 ? lines[negativeIndex].replace(/^Negative prompt:\s*/i, '').trim() : '';
-  const optionLines = negativeIndex >= 0 ? lines.slice(negativeIndex + 1) : [];
-  const payload: Record<string, unknown> = {
-    prompt,
-    negative_prompt: negativePrompt,
-  };
-
-  for (const line of optionLines) {
-    for (const part of line.split(',')) {
-      const trimmed = part.trim();
-      if (!trimmed) continue;
-      if (!trimmed.includes(':')) {
-        payload[trimmed] = '';
-        continue;
-      }
-
-      const [rawKey, ...rest] = trimmed.split(':');
-      const key = rawKey.trim();
-      const rawValue = rest.join(':').trim();
-      payload[key] = parseScalar(rawValue);
-    }
-  }
-
-  return normalizePayload(payload, 'WebUI parameters');
 }
 
 function parseScalar(value: string) {
@@ -376,41 +129,172 @@ function parseScalar(value: string) {
   return value;
 }
 
-function parseCandidate(value: string, source: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
+function parsePngTextMetadata(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < PNG_SIGNATURE.length || !PNG_SIGNATURE.every((value, index) => bytes[index] === value)) {
+    return {};
+  }
 
-  try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-    if (typeof parsed.Comment === 'string') {
-      try {
-        return normalizePayload(JSON.parse(parsed.Comment) as Record<string, unknown>, `${source} / Comment`, parsed.Comment);
-      } catch {
-        return null;
+  const metadata: Record<string, string> = {};
+  let offset = PNG_SIGNATURE.length;
+
+  while (offset + 8 <= bytes.length) {
+    const view = new DataView(buffer, offset, 4);
+    const chunkLength = view.getUint32(0);
+    const chunkType = decodeText(bytes.slice(offset + 4, offset + 8));
+    const chunkStart = offset + 8;
+    const chunkEnd = chunkStart + chunkLength;
+    if (chunkEnd > bytes.length) break;
+
+    const chunk = bytes.slice(chunkStart, chunkEnd);
+    if (chunkType === 'tEXt') {
+      const separatorIndex = chunk.indexOf(0);
+      if (separatorIndex > 0) {
+        metadata[decodeText(chunk.slice(0, separatorIndex))] = decodeText(chunk.slice(separatorIndex + 1));
+      }
+    } else if (chunkType === 'iTXt') {
+      const separatorIndex = chunk.indexOf(0);
+      if (separatorIndex > 0) {
+        const key = decodeText(chunk.slice(0, separatorIndex));
+        let cursor = separatorIndex + 1;
+        const compressionFlag = chunk[cursor] ?? 0;
+        cursor += 2;
+
+        while (cursor < chunk.length && chunk[cursor] !== 0) cursor += 1;
+        cursor += 1;
+        while (cursor < chunk.length && chunk[cursor] !== 0) cursor += 1;
+        cursor += 1;
+
+        if (compressionFlag === 0 && cursor <= chunk.length) {
+          metadata[key] = decodeText(chunk.slice(cursor));
+        }
       }
     }
 
-    if (typeof parsed.parameters === 'string') {
-      return parseWebUiParameters(parsed.parameters);
+    offset = chunkEnd + 4;
+    if (chunkType === 'IEND') break;
+  }
+
+  return metadata;
+}
+
+async function readImagePixels(file: File) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+      element.src = url;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    if (!context) return null;
+
+    context.drawImage(image, 0, 0);
+    return context.getImageData(0, 0, canvas.width, canvas.height).data;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function* alphaLeastSignificantBits(pixels: Uint8ClampedArray) {
+  for (let index = 3; index < pixels.length; index += 4) {
+    yield String(pixels[index] & 1);
+  }
+}
+
+function* rgbLeastSignificantBits(pixels: Uint8ClampedArray) {
+  for (let index = 0; index < pixels.length; index += 4) {
+    yield String(pixels[index] & 1);
+    yield String(pixels[index + 1] & 1);
+    yield String(pixels[index + 2] & 1);
+  }
+}
+
+class BitStreamReader {
+  private readonly iterator: Generator<string, void, unknown>;
+  private pending = '';
+
+  constructor(iterator: Generator<string, void, unknown>) {
+    this.iterator = iterator;
+  }
+
+  readBits(count: number) {
+    while (this.pending.length < count) {
+      const next = this.iterator.next();
+      if (next.done) return null;
+      this.pending += next.value;
     }
 
-    if ('prompt' in parsed || 'uc' in parsed || 'negative_prompt' in parsed) {
-      return normalizePayload(parsed, source);
-    }
+    const result = this.pending.slice(0, count);
+    this.pending = this.pending.slice(count);
+    return result;
+  }
+
+  readText(byteLength: number) {
+    const binary = this.readBits(byteLength * 8);
+    return binary == null ? null : encodeBytesToText(binary);
+  }
+}
+
+async function inflateGzip(bytes: Uint8Array) {
+  if (!('DecompressionStream' in window)) {
+    return decodeText(bytes);
+  }
+
+  const stream = new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')));
+  return stream.text();
+}
+
+async function decodeStealthPayload(binary: string, compressed: boolean) {
+  const bytes = new Uint8Array((binary.match(/.{1,8}/g) ?? []).map((chunk) => Number.parseInt(chunk, 2)));
+  if (!compressed) return decodeText(bytes);
+
+  try {
+    return await inflateGzip(bytes);
   } catch {
-    return parseWebUiParameters(trimmed);
+    return decodeText(bytes);
+  }
+}
+
+async function extractStealthMetadata(file: File) {
+  const pixels = await readImagePixels(file);
+  if (!pixels) return null;
+
+  for (const reader of [new BitStreamReader(alphaLeastSignificantBits(pixels)), new BitStreamReader(rgbLeastSignificantBits(pixels))]) {
+    const header = reader.readText('stealth_pnginfo'.length);
+    if (!header) continue;
+
+    const descriptor = STEALTH_TEXT_HEADERS.get(header);
+    if (!descriptor) continue;
+
+    const payloadLengthBits = reader.readBits(32);
+    if (!payloadLengthBits) continue;
+
+    const payloadLength = readUint32(payloadLengthBits);
+    if (!Number.isFinite(payloadLength) || payloadLength <= 0) continue;
+
+    const payloadBits = reader.readBits(payloadLength);
+    if (!payloadBits) continue;
+
+    return decodeStealthPayload(payloadBits, descriptor.compressed);
   }
 
   return null;
 }
 
-export async function inspectImageExif(file: File): Promise<ExifInspectionResult> {
-  const buffer = await file.arrayBuffer();
-  const metadata = file.type === 'image/png' ? parsePngTextChunks(buffer) : {};
+function collectRawSources(metadata: Record<string, string>, stealth: string | null) {
   const rawSources: Array<{ label: string; value: string }> = [];
 
-  const preferredMetadataKeys = ['Comment', 'Description', 'Source', 'Title', 'Software', 'Generation_time'];
-  for (const key of preferredMetadataKeys) {
+  if (stealth) {
+    rawSources.push({ label: 'Stealth metadata', value: stealth });
+  }
+
+  for (const key of METADATA_PRIORITY) {
     const value = metadata[key];
     if (typeof value === 'string' && value.length > 0) {
       rawSources.push({ label: `PNG ${key}`, value });
@@ -418,19 +302,141 @@ export async function inspectImageExif(file: File): Promise<ExifInspectionResult
   }
 
   for (const [key, value] of Object.entries(metadata)) {
-    if (preferredMetadataKeys.includes(key)) continue;
+    if (METADATA_PRIORITY.includes(key)) continue;
     rawSources.push({ label: `PNG ${key}`, value });
   }
 
-  const stealth = await extractStealthInfo(file);
-  if (stealth) {
-    rawSources.unshift({ label: 'Stealth metadata', value: stealth });
+  return rawSources;
+}
+
+function collectCharacterPrompts(input: Record<string, unknown>) {
+  const prompts = new Set<string>();
+
+  const visit = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    if (typeof record.char_caption === 'string') {
+      const normalized = normalizePromptText(record.char_caption);
+      if (normalized) prompts.add(normalized);
+    }
+
+    Object.values(record).forEach(visit);
+  };
+
+  visit(input.v4_prompt);
+  visit(input.v4_negative_prompt);
+  return Array.from(prompts);
+}
+
+function splitParsedFields(input: Record<string, unknown>) {
+  const option: Record<string, string | number> = {};
+  const etc: Record<string, string | number> = {};
+
+  for (const [rawKey, rawValue] of Object.entries(input)) {
+    if (rawValue == null || rawKey === 'prompt' || rawKey === 'uc' || rawKey === 'negative_prompt') continue;
+    const normalizedKey = OPTION_KEY_MAPPING[rawKey] ?? rawKey;
+    const target = TARGET_OPTION_KEYS.has(rawKey.toLowerCase()) || TARGET_OPTION_KEYS.has(normalizedKey.toLowerCase()) ? option : etc;
+    target[normalizedKey] = normalizeScalar(rawValue);
   }
 
-  const parsed =
-    rawSources
-      .map((entry) => parseCandidate(entry.value, entry.label))
-      .find((entry) => entry !== null && (entry.prompt.length > 0 || entry.characterPrompts.length > 0)) ?? null;
+  return { option, etc };
+}
+
+function buildParsedPayload(input: Record<string, unknown>, source: string, rawComment?: string): ParsedExifPayload {
+  const { option, etc } = splitParsedFields(input);
+  return {
+    prompt: normalizePromptText(String(input.prompt ?? '')),
+    negativePrompt: normalizePromptText(String(input.uc ?? input.negative_prompt ?? '')),
+    characterPrompts: collectCharacterPrompts(input),
+    option,
+    etc,
+    source,
+    rawComment,
+  };
+}
+
+function parseParametersBlock(parameters: string) {
+  const lines = parameters.split(/\r?\n/);
+  if (lines.length === 0) return null;
+
+  const negativePromptIndex = lines.findIndex((line) => line.trim().startsWith('Negative prompt:'));
+  const promptLines = negativePromptIndex >= 0 ? lines.slice(0, negativePromptIndex) : lines;
+  const optionLines = negativePromptIndex >= 0 ? lines.slice(negativePromptIndex + 1) : [];
+  const negativePrompt =
+    negativePromptIndex >= 0 ? lines[negativePromptIndex].replace(/^Negative prompt:\s*/i, '').trim() : '';
+
+  const payload: Record<string, unknown> = {
+    prompt: promptLines.join('\n').trim(),
+    negative_prompt: negativePrompt,
+  };
+
+  for (const line of optionLines) {
+    const segments = line.split(',');
+    for (const segment of segments) {
+      const trimmed = segment.trim();
+      if (!trimmed) continue;
+      if (!trimmed.includes(':')) {
+        payload[trimmed] = '';
+        continue;
+      }
+
+      const [key, ...rest] = trimmed.split(':');
+      payload[key.trim()] = parseScalar(rest.join(':').trim());
+    }
+  }
+
+  return buildParsedPayload(payload, 'WebUI parameters');
+}
+
+function parseJsonCandidate(parsed: Record<string, unknown>, source: string) {
+  if (typeof parsed.Comment === 'string') {
+    try {
+      return buildParsedPayload(JSON.parse(parsed.Comment) as Record<string, unknown>, `${source} / Comment`, parsed.Comment);
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof parsed.parameters === 'string') {
+    return parseParametersBlock(parsed.parameters);
+  }
+
+  if ('prompt' in parsed || 'uc' in parsed || 'negative_prompt' in parsed) {
+    return buildParsedPayload(parsed, source);
+  }
+
+  return null;
+}
+
+function parseSourceValue(source: { label: string; value: string }) {
+  const trimmed = source.value.trim();
+  if (!trimmed) return null;
+
+  try {
+    return parseJsonCandidate(JSON.parse(trimmed) as Record<string, unknown>, source.label);
+  } catch {
+    return parseParametersBlock(trimmed);
+  }
+}
+
+function inferFormat(name: string) {
+  const extension = name.split('.').pop()?.toLowerCase();
+  return extension ? `image/${extension}` : 'unknown';
+}
+
+export async function inspectImageExif(file: File): Promise<ExifInspectionResult> {
+  const buffer = await file.arrayBuffer();
+  const metadata = file.type === 'image/png' ? parsePngTextMetadata(buffer) : {};
+  const stealth = await extractStealthMetadata(file);
+  const rawSources = collectRawSources(metadata, stealth);
+  const parsed = rawSources
+    .map((source) => parseSourceValue(source))
+    .find((entry) => entry !== null && (entry.prompt.length > 0 || entry.characterPrompts.length > 0)) ?? null;
 
   return {
     format: file.type || inferFormat(file.name),
@@ -442,9 +448,4 @@ export async function inspectImageExif(file: File): Promise<ExifInspectionResult
         ? '메타데이터를 읽었습니다.'
         : '읽을 수 있는 PNG 텍스트 청크나 스텔스 메타데이터를 찾지 못했습니다.',
   };
-}
-
-function inferFormat(name: string) {
-  const extension = name.split('.').pop()?.toLowerCase();
-  return extension ? `image/${extension}` : 'unknown';
 }
