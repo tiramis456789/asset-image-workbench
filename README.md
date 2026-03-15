@@ -1,5 +1,7 @@
 # Asset Image Workbench
 
+[Korean README](README.ko.md)
+
 Asset Image Workbench is a browser-based workbench for reviewing, sorting, renaming, and reorganizing image files before committing changes to disk.
 
 It is built for workflows where metadata matters, especially generated-image collections that carry prompt and EXIF-like information. The app keeps changes virtual until the final apply step so you can inspect the result first and write to the real folder last.
