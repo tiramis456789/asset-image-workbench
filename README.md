@@ -130,6 +130,11 @@ This project is aimed at personal and community use rather than a hosted SaaS pr
 This project was developed with assistance from generative AI during implementation and documentation work.
 The released code and written materials were reviewed and finalized by a human before sharing.
 
+## Credits
+
+- EXIF and PNG metadata compatibility in this project was informed by community tooling and known metadata conventions used around NAI and WebUI image workflows.
+- The rename-template workflow was developed independently for this project, with some high-level inspiration taken from [ExifBasedWorker](https://github.com/InoriNatsume/ExifBasedWorker).
+
 ## Roadmap
 
 - Desktop packaging
