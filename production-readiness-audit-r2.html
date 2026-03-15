@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>프로덕션 준비도 재감사</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09111d;
+      --panel: #101a2a;
+      --panel-2: #0d1522;
+      --border: #22344d;
+      --text: #edf4ff;
+      --muted: #9fb0cf;
+      --accent: #7dd3fc;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --bad: #fb7185;
+      --shadow: 0 24px 44px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(125, 211, 252, 0.14), transparent 26%),
+        radial-gradient(circle at top right, rgba(52, 211, 153, 0.08), transparent 24%),
+        linear-gradient(180deg, #07101b 0%, #09111d 100%);
+    }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 20px 44px; }
+    .panel, .hero, .summary {
+      background: linear-gradient(180deg, rgba(16, 26, 42, 0.97), rgba(10, 17, 29, 0.97));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+    .hero { padding: 24px; margin-bottom: 18px; }
+    .hero h1 { margin: 0 0 10px; font-size: 30px; }
+    .hero p { margin: 0; color: var(--muted); line-height: 1.58; }
+    .grid { display: grid; gap: 18px; }
+    .overview { grid-template-columns: 1.15fr 0.85fr; margin-bottom: 18px; }
+    .panel { padding: 20px; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    h3 { margin: 18px 0 10px; font-size: 16px; }
+    p, li { line-height: 1.58; }
+    .muted { color: var(--muted); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(148, 163, 184, 0.08);
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .total-box {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 18px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 20px;
+      background: rgba(9, 17, 29, 0.78);
+      margin-bottom: 14px;
+    }
+    .big { font-size: 34px; font-weight: 800; color: var(--accent); }
+    .grade {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 78px;
+      padding: 10px 16px;
+      border-radius: 14px;
+      background: rgba(52, 211, 153, 0.10);
+      border: 1px solid rgba(52, 211, 153, 0.26);
+      font-size: 26px;
+      font-weight: 800;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td {
+      padding: 11px 10px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(34, 52, 77, 0.85);
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .score { font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .findings { display: grid; gap: 18px; margin-top: 18px; }
+    .category {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      background: rgba(8, 14, 24, 0.72);
+    }
+    blockquote {
+      margin: 0 0 14px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: rgba(125, 211, 252, 0.08);
+      border-radius: 0 12px 12px 0;
+    }
+    ul, ol { margin: 10px 0 0 18px; padding: 0; }
+    li { margin: 8px 0; }
+    .sev-critical { color: var(--bad); font-weight: 700; }
+    .sev-major { color: #ffb86b; font-weight: 700; }
+    .sev-minor { color: var(--warn); font-weight: 700; }
+    .sev-suggest { color: #93c5fd; font-weight: 700; }
+    .summary { padding: 22px; margin-top: 18px; }
+    .summary-grid { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 18px; }
+    .score-lines div { margin: 7px 0; color: var(--muted); }
+    .ruling {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(52, 211, 153, 0.24);
+      background: rgba(52, 211, 153, 0.08);
+      font-weight: 700;
+    }
+    code {
+      font-family: "Consolas", "JetBrains Mono", monospace;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 6px;
+      padding: 1px 5px;
+      color: #d9ecff;
+    }
+    @media (max-width: 900px) {
+      .overview, .summary-grid { grid-template-columns: 1fr; }
+      .total-box { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>프로덕션 준비도 재감사</h1>
+      <p>이전 감사 이후의 개선 사항을 기준으로 다시 게이트를 적용했다. 이번 평가는 지난 보고서의 지적이 실제로 리스크를 줄였는지, 그리고 아직 배포를 막아야 하는 문제가 무엇인지에 초점을 맞춘 후속 감사다.</p>
+    </section>
+
+    <section class="grid overview">
+      <div class="panel">
+        <h2>A. 개요 및 스택</h2>
+        <p>대상은 로컬 이미지 묶음을 검토하고, 가상 이름 변경·가상 폴더 이동·EXIF 기반 태그 정리를 수행한 뒤 마지막 단계에서 실제 폴더에 반영하는 데스크톱 우선 이미지 작업 도구다. 호스팅형 서비스는 아니지만 실제 파일 쓰기와 Electron 패키징을 포함하므로, 로컬 도구 기준의 안전성과 재현성을 충분히 요구할 수 있다.</p>
+        <h3>감지된 기술</h3>
+        <div class="chips">
+          <span class="chip">TypeScript 5.8</span>
+          <span class="chip">React 18</span>
+          <span class="chip">Vite 5</span>
+          <span class="chip">Vitest 3</span>
+          <span class="chip">Electron 37</span>
+          <span class="chip">Tailwind CSS 3</span>
+          <span class="chip">GitHub Actions CI</span>
+          <span class="chip">electron-builder 포터블 패키징</span>
+        </div>
+        <h3>검증된 정량 지표</h3>
+        <ul>
+          <li>소스 파일 96개, 총 9,840줄. 기준은 <code>src</code>와 <code>electron</code> 아래의 <code>.ts</code>, <code>.tsx</code>, <code>.js</code>, <code>.mjs</code>, <code>.css</code> 파일이다.</li>
+          <li>테스트 파일 7개, 테스트 라인 820줄, 실제 테스트 케이스 29개. 기준은 <code>src/test</code>와 <code>vitest run</code> 실행 결과다.</li>
+          <li>대형 파일은 여전히 많다. <code>src/hooks/useImageStore.ts</code> 524줄, <code>src/lib/exif.ts</code> 450줄, <code>src/components/viewer/RenameWorkbench.tsx</code> 402줄, <code>src/pages/Index.tsx</code> 304줄이다.</li>
+          <li>포터블 패키지 산출물은 실제로 존재한다. <code>release/AssetImageWorkbench-0.1.0-portable.exe</code>를 확인했고, 이번 감사에서도 <code>npm run build:portable</code>가 다시 통과했다.</li>
+          <li>커밋 수는 여전히 검증 불가다. 현재 작업본에 <code>.git</code> 메타데이터가 없어서 이력 품질은 판단하지 않았다.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h2>B. 점수표</h2>
+        <div class="total-box">
+          <div>
+            <div class="muted">가중 총점</div>
+            <div class="big">6.4 / 10</div>
+          </div>
+          <div class="grade">B</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>범주</th>
+              <th>가중치</th>
+              <th>점수</th>
+              <th>가중 점수</th>
+              <th>한 줄 요약</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>가독성·수정 용이성</td>
+              <td>20%</td>
+              <td class="score">6.5</td>
+              <td>1.30</td>
+              <td>잔여 보일러플레이트는 크지만 이전보다 핵심 흐름이 더 선명해졌다.</td>
+            </tr>
+            <tr>
+              <td>견고성·오류 회복력</td>
+              <td>20%</td>
+              <td class="score">7.0</td>
+              <td>1.40</td>
+              <td>실제 파일 적용 경로가 눈에 띄게 강화됐다.</td>
+            </tr>
+            <tr>
+              <td>보안 태세</td>
+              <td>15%</td>
+              <td class="score">4.5</td>
+              <td>0.68</td>
+              <td><code>no-sandbox</code>는 사라졌지만 렌더러 샌드박스는 아직 꺼져 있다.</td>
+            </tr>
+            <tr>
+              <td>검증·정확성 보증</td>
+              <td>20%</td>
+              <td class="score">7.5</td>
+              <td>1.50</td>
+              <td>CI, 타입체크, 실측 테스트 통과까지 확보했다.</td>
+            </tr>
+            <tr>
+              <td>아키텍처·구조 건전성</td>
+              <td>15%</td>
+              <td class="score">6.0</td>
+              <td>0.90</td>
+              <td>구조는 개선됐지만 상태 중심축 비대화는 그대로다.</td>
+            </tr>
+            <tr>
+              <td>의존성·환경 건전성</td>
+              <td>10%</td>
+              <td class="score">6.5</td>
+              <td>0.65</td>
+              <td>락파일과 패키징 흐름은 정리됐으나 군살은 아직 많다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>C. 핵심 발견</h2>
+      <div class="findings">
+        <section class="category">
+          <blockquote>Anchoring — Best: 이 프로젝트 규모에서는 새 엔지니어가 파일 적용, EXIF 파싱, 이름 변경 워크플로를 몇 개의 핵심 모듈만 따라가며 이해할 수 있어야 한다. Worst: 생성 래퍼와 대형 파일이 계속 쌓여 핵심 로직보다 구조 소음을 더 많이 읽게 된다. Current: 불필요한 예제 테스트와 일부 잔재는 줄었고 앱 상단 조립도 가벼워졌지만, 실질적 변경의 중심이 여전히 대형 훅과 대형 컴포넌트에 남아 있어 상위권 점수까지는 가지 못한다. → Score: 6.5/10</blockquote>
+          <ul>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> <code>src/App.tsx</code>에서 사용하지 않던 <code>react-query</code> 공급자가 제거됐고, <code>src/App.css</code> 같은 예제 찌꺼기도 사라졌다. 지난 감사에서 지적한 “읽는 사람을 헷갈리게 하는 기본 보일러플레이트”는 실제로 정리됐다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 그래도 구조 중심축은 여전히 크다. <code>src/hooks/useImageStore.ts</code>가 524줄로 상태, 충돌 판단, 폴더 열기, 이동, 실제 반영까지 다 안고 있고, <code>src/components/viewer/RenameWorkbench.tsx</code>와 <code>src/lib/exif.ts</code>도 여전히 대형 파일이다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 빠른 UI 조립] <code>src/components/ui</code>의 생성 래퍼 다수가 그대로 남아 있다. 지난 감사 때와 같은 군살이며, 런타임 위험보다는 탐색 비용과 유지보수 분산을 일으킨다.</li>
+          </ul>
+          <h3>AI 생성 코드 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Over-Specification</strong>: 실제 사용 범위보다 넓은 UI 래퍼 컬렉션이 여전히 유지된다. 위치는 <code>src/components/ui/*.tsx</code>, 실제 리스크는 구조 잡음과 의존성 표면 증가다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 파일 시스템을 건드리는 앱이라면 실제 반영 경로가 임시 파일, 충돌 검사, 실패 정리까지 포함해 데이터 손상 가능성을 최소화해야 한다. Worst: 쓰기 중 실패하면 원본과 대상이 뒤엉킨 중간 상태를 그대로 남긴다. Current: 지난 라운드의 가장 큰 약점이던 적용 경로가 임시 파일과 실패 정리 로직을 도입하면서 확실히 좋아졌고, 이 범주는 가장 눈에 띄게 개선됐다. → Score: 7.0/10</blockquote>
+          <ul>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> <code>src/hooks/useImageApply.ts:77-120</code>는 임시 파일명 생성과 실패 정리 함수를 도입했고, <code>src/hooks/useImageApply.ts:190-225</code>는 대상 파일 쓰기 실패 시 정리 시도를 남긴다. 여기에 맞춰 <code>src/test/useImageApply.test.ts</code>도 6개 테스트로 늘어났다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 여전히 완전한 원자성은 아니다. <code>src/hooks/useImageApply.ts:198-203</code>는 최종 파일을 만든 뒤 원본을 삭제하는 흐름이라, 운영체제 수준의 교체 보장이 있는 것은 아니다. 실패 시 정리를 시도하지만 파일 시스템이 정리를 거부하면 복구는 로그 의존이다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 사용자 데이터 보존 우선] 실패 시 성공분을 유지하고 로그를 남기는 전략은 여전히 유지된다. 개인용 로컬 도구로서는 합리적이지만, 사용자는 “완전 성공”과 “부분 성공”을 더 명확히 구분해서 받아야 한다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 이 프로젝트의 실제 공격 표면은 Electron 렌더러 격리와 로컬 파일 권한이므로, 샌드박스가 켜져 있고 불필요한 위험 스위치는 꺼져 있어야 한다. Worst: 로컬 파일을 다루는 앱이 렌더러를 사실상 신뢰한 채 권한을 넓게 열어 둔다. Current: 지난번의 <code>no-sandbox</code> 계열 스위치는 정리됐지만, 렌더러 샌드박스와 GPU 관련 위험 설정이 남아 있어 아직 프로덕션 수준 보안 태세라고 부르긴 어렵다. → Score: 4.5/10</blockquote>
+          <p><strong>실제 공격 표면 식별:</strong> 네트워크 노출, 인증, 비밀 저장은 거의 없지만 드래그한 파일, 폴더 핸들, PNG/EXIF 메타데이터, Electron 렌더러, 포터블 실행 환경을 처리한다. 따라서 “오프라인 도구”이지 “보안 평가 불필요”는 아니다.</p>
+          <ul>
+            <li><span class="sev-critical">🔴 Critical</span> [OVERSIGHT] 핵심 보안 결함은 아직 남아 있다. <code>electron/main.mjs:51-56</code>에서 <code>sandbox: false</code>가 그대로다. <code>contextIsolation</code>만으로는 데스크톱 패키지의 기본 하드닝 요구를 충족하지 못한다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] GPU 안전성 문제를 피하려고 공격 표면이 넓은 스위치를 다수 켰다. <code>electron/main.mjs:12-20</code>의 <code>in-process-gpu</code>, <code>use-gl</code>, <code>enable-unsafe-swiftshader</code>는 충돌 회피에는 도움이 될 수 있어도 보안·격리 관점에서는 보수적 설정이 아니다.</li>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> 지난 감사에서 가장 심각했던 <code>no-sandbox</code>와 <code>disable-gpu-sandbox</code>는 제거됐고, 외부 폰트 호출도 <code>src/index.css</code>에서 사라졌다. 즉 보안 태세는 분명히 전진했다.</li>
+          </ul>
+          <h3>우선 취약점 적용성</h3>
+          <ul>
+            <li><strong>SQL Injection (CWE-89):</strong> N/A. 데이터베이스가 없다.</li>
+            <li><strong>XSS (CWE-79/80):</strong> 제한적으로만 해당. <code>src/components/ui/chart.tsx</code>의 <code>dangerouslySetInnerHTML</code>는 내부 차트 CSS 생성 용도이며 현재 사용자 입력과 연결되지 않는다.</li>
+            <li><strong>Log Injection (CWE-117):</strong> 낮은 적용성. 경로와 파일명이 주 로그 데이터이며, 주 실행 환경인 Windows에서는 개행 포함 파일명 제약이 강하다.</li>
+            <li><strong>SSRF:</strong> N/A. 사용자 URL을 대신 요청하는 서버 측 코드가 없다.</li>
+            <li><strong>Insecure Deserialization:</strong> N/A. 로컬 템플릿 JSON을 단순 구조 검증 후 메모리 상태에만 반영한다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 파일 적용, EXIF 처리, 이름 변경 같은 핵심 경로는 테스트·타입체크·CI가 함께 묶여 변경 즉시 깨져야 한다. Worst: 로컬 개발자의 기억에만 의존하고 검증이 자동으로 강제되지 않는다. Current: 이 범주는 이번 라운드의 가장 큰 상향 요소다. CI와 타입체크가 실제로 추가됐고, 테스트가 여전히 통과하며 허수 테스트도 제거됐다. → Score: 7.5/10</blockquote>
+          <ul>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> <code>.github/workflows/ci.yml:25-38</code>는 <code>npm ci</code>, <code>lint</code>, <code>typecheck</code>, <code>test</code>, <code>build</code>를 묶는다. 이번 감사에서도 <code>npm run typecheck</code>, <code>npm run test</code>, <code>npm run build</code>, <code>npm run build:portable</code>가 실제 통과했다.</li>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> <code>tsconfig.app.json:16-26</code>과 <code>tsconfig.json</code>에서 <code>noImplicitAny</code>와 <code>strictNullChecks</code>가 켜졌다. 아직 <code>strict</code> 전체는 아니지만 지난 상태보다 정적 검증력은 확실히 높아졌다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [OVERSIGHT] 그래도 통합 검증은 비어 있다. CI는 브라우저/Electron 통합 시나리오나 실제 포터블 실행 smoke test까지는 하지 않으며, <code>strict: false</code>도 그대로다.</li>
+          </ul>
+          <h3>AI 생성 코드 안티패턴</h3>
+          <ul>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>Fake Test Coverage</strong>는 지난 라운드보다 좋아졌다. 무의미한 예제 테스트 파일이 제거돼 테스트 숫자 왜곡이 줄었다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 기능이 늘어도 화면 조립, 상태 모델, 파일 작업, EXIF 파싱이 서로 느슨하게 연결돼 수정 반경이 예측 가능해야 한다. Worst: 새 기능 하나마다 대형 저장 훅과 루트 페이지와 작업대 UI를 동시에 크게 건드려야 한다. Current: 구조적 단순화가 일부 있었지만 중심축 비대화 자체는 해소되지 않아, 성장 여력은 ‘나쁘지 않지만 아직 불안한’ 수준에 머문다. → Score: 6.0/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 구조의 가장 큰 제약은 변하지 않았다. <code>src/hooks/useImageStore.ts</code>, <code>src/pages/Index.tsx</code>, <code>src/components/viewer/RenameWorkbench.tsx</code>가 여전히 핵심 조립과 상태 변경의 허브다.</li>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> 앱 최상단에서 불필요한 공급자를 제거하고 환경 설정을 정리한 덕분에, 구조가 지난번보다는 목적 중심으로 보인다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 로컬 도구 최적화] 제품이 서버 확장을 목표로 하지 않는다는 점을 감안하면 현재 계층 분리는 치명적으로 나쁘진 않다. 다만 기능이 더 붙으면 “이 정도면 충분”이라는 판단이 빠르게 깨질 구조다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 다른 환경에서 설치·실행·빌드·패키징이 같은 경로로 재현되고, 락파일과 문서와 CI와 빌드 설정이 한 방향을 가리켜야 한다. Worst: 패키지 관리자와 락파일과 문서가 서로 다른 현실을 말해 누구도 재현 경로를 확신하지 못한다. Current: 이 범주는 지난번보다 분명히 좋아졌다. 락파일 일치, 외부 폰트 제거, CI 추가, 포터블 재생성까지 확보했지만 아직 의존성 군살과 패키징 경고가 남는다. → Score: 6.5/10</blockquote>
+          <ul>
+            <li><span class="sev-suggest">🔵 Suggestion</span> <strong>긍정 근거:</strong> <code>package.json</code>과 <code>package-lock.json</code>의 이름·버전이 이제 일치하고, 루트에는 <code>package-lock.json</code>만 남아 패키지 관리자 혼선이 줄었다. 외부 폰트 의존도 <code>src/index.css</code>에서 제거됐다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [OVERSIGHT] 빌드/패키징 경고가 아직 남는다. 이번 <code>npm run build:portable</code> 실행에서는 기본 Electron 아이콘 사용 경고와 대량의 duplicate dependency references 메시지가 나왔다. <code>package.json</code>의 빌드 설정에 아이콘 지정이 없고, 의존성 표면도 여전히 넓다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 빠른 UI 조립] <code>cmdk</code>, <code>react-day-picker</code>, <code>recharts</code>, <code>react-hook-form</code>, <code>vaul</code> 등 현재 제품 흐름에서 직접 효용이 약한 라이브러리가 남아 있다. 지금 당장 깨지진 않지만 보안 관리와 설치 비용을 늘린다.</li>
+          </ul>
+          <h3>AI 생성 코드 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Package Hallucination</strong>은 보이지 않았다. 다만 생성형 프로젝트에서 흔한 “미리 깔아 둔 패키지 세트” 흔적은 남아 있고, 실제 리스크는 유지보수 표면 증가다.</li>
+          </ul>
+        </section>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>D. 실행 계획</h2>
+      <ol>
+        <li><strong>하드닝</strong> — <code>electron/main.mjs</code>의 <code>sandbox: false</code>를 제거하고, 필요한 권한만 <code>preload</code>를 통해 노출하라.</li>
+        <li><strong>하드닝</strong> — GPU 안정성 문제를 재현 가능한 범위로 좁힌 뒤, <code>enable-unsafe-swiftshader</code> 같은 위험 완화 스위치의 필요 여부를 다시 검증하라.</li>
+        <li><strong>빠른 개선</strong> — <code>package.json</code>에 앱 아이콘을 명시해 포터블 빌드의 기본 아이콘 경고를 없애라.</li>
+        <li><strong>빠른 개선</strong> — <code>strict</code> 전체 활성화를 목표로 타입 예외를 줄이고, 남은 널/상태 취약점을 조기에 잡아라.</li>
+        <li><strong>전략 과제</strong> — <code>useImageStore</code>를 파일 적용 도메인, 트리 도메인, 뷰어 선택 상태로 분해해 중심 훅의 비대화를 멈춰라.</li>
+        <li><strong>전략 과제</strong> — 실제 사용하지 않는 UI 래퍼와 의존성을 줄여 환경 관리 비용과 패키징 경고를 함께 낮춰라.</li>
+      </ol>
+    </section>
+
+    <section class="summary">
+      <div class="summary-grid">
+        <div>
+          <h2>E. 코드베이스 성격</h2>
+          <p>지난 감사의 지적을 꽤 성실하게 반영해 실전 검증력과 재현성을 끌어올렸지만, 데스크톱 보안 하드닝은 아직 끝내지 않은 코드베이스다.</p>
+
+          <h2>F. 최종 판정</h2>
+          <p>이 프로젝트는 로컬 이미지 묶음을 정리하고, 이름과 위치를 가상으로 수정한 뒤 마지막 단계에서 실제 폴더에 반영하는 데스크톱형 작업 도구다. 제품 범위는 여전히 개인용 로컬 툴에 가깝지만, 파일 쓰기와 패키징을 포함하는 만큼 프로덕션 기준의 안전성은 충분히 따져야 한다.</p>
+          <p><strong>스택 요약:</strong> TypeScript, React, Vite, Vitest, Electron, Tailwind CSS.</p>
+          <div class="score-lines">
+            <div>가독성·수정 용이성 6.5 — 더 깔끔해졌지만 중심 파일이 크다.</div>
+            <div>견고성·오류 회복력 7.0 — 파일 적용 경로가 분명히 단단해졌다.</div>
+            <div>보안 태세 4.5 — 가장 위험한 일부는 줄었지만 아직 미완이다.</div>
+            <div>검증·정확성 보증 7.5 — 이번 라운드의 가장 큰 개선 구간이다.</div>
+            <div>아키텍처·구조 건전성 6.0 — 구조 부채는 줄지 않았다.</div>
+            <div>의존성·환경 건전성 6.5 — 재현성은 좋아졌고 군살은 남았다.</div>
+            <div><strong>가중 총점 6.4 / 10, 등급 B</strong></div>
+          </div>
+          <p>이번에는 확실히 “프로토타입 냄새”가 약해졌다. CI를 붙이고 타입체크를 추가하고, 락파일을 맞추고, 외부 폰트를 걷어내고, 포터블 패키지까지 실제로 재생성한 건 전부 의미 있는 전진이다. 특히 실제 파일 반영 경로를 강화한 점은 점수에 직접 반영할 만한 개선이다. 다만 솔직히 말해 데스크톱 보안 태세는 아직 프로덕션 승인을 주기엔 부족하다. <code>Electron</code> 렌더러 샌드박스를 꺼 둔 상태에서는 나머지 개선이 좋아도 최종 판정이 보수적일 수밖에 없다.</p>
+          <div class="ruling">프로덕션 준비 판정: 지난번보다 한 단계 올라왔고 재도전 자격은 충분하지만, 배포 승인 전 마지막 차단 항목은 여전히 Electron 보안 하드닝이다.</div>
+        </div>
+        <div class="panel" style="padding:16px;">
+          <h2>감사 메모</h2>
+          <ul>
+            <li>실행 검증: <code>npm run lint</code> 경고 7건, <code>npm run typecheck</code> 통과, <code>npm run test</code> 통과, <code>npm run build</code> 통과, <code>npm run build:portable</code> 통과.</li>
+            <li>문서 자산: <code>README.md</code>는 기본 사용법을 설명하고, 이제 <code>.github/workflows/ci.yml</code>이 품질 게이트를 보강한다.</li>
+            <li>남은 포장 이슈: 기본 아이콘 경고, 패키징 시 duplicate dependency references 메시지, Electron GPU 우회 스위치 다수.</li>
+            <li>이번 라운드의 핵심 성과: 허수 테스트 제거, 타입체크 추가, 락파일 정합성 회복, 외부 런타임 폰트 제거, 포터블 패키지 재검증.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

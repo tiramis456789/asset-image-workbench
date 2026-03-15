@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>프로덕션 준비도 코드 감사</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #11182b;
+      --panel-2: #0f1524;
+      --border: #24324f;
+      --text: #edf2ff;
+      --muted: #9fb0d4;
+      --accent: #6ee7ff;
+      --good: #34d399;
+      --warn: #fbbf24;
+      --bad: #fb7185;
+      --chip: #1a2540;
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.32);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans KR", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(110, 231, 255, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(96, 165, 250, 0.10), transparent 24%),
+        linear-gradient(180deg, #0a0f1c 0%, #0b1020 100%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 28px 20px 44px;
+    }
+    .hero, .panel {
+      background: linear-gradient(180deg, rgba(17, 24, 43, 0.96), rgba(12, 18, 32, 0.96));
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+    .hero { padding: 24px; margin-bottom: 18px; }
+    .hero h1 { margin: 0 0 10px; font-size: 30px; }
+    .hero p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .grid {
+      display: grid;
+      gap: 18px;
+    }
+    .overview {
+      grid-template-columns: 1.2fr 0.8fr;
+      margin-bottom: 18px;
+    }
+    .panel { padding: 20px; }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+    }
+    h3 {
+      margin: 18px 0 10px;
+      font-size: 16px;
+    }
+    p, li { line-height: 1.58; }
+    .muted { color: var(--muted); }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      background: var(--chip);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      border-bottom: 1px solid rgba(36, 50, 79, 0.85);
+      padding: 11px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    .score {
+      font-weight: 700;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+    .total-box {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+      padding: 18px 20px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(12, 18, 32, 0.8);
+    }
+    .total-box .big {
+      font-size: 34px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .grade {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 78px;
+      padding: 10px 16px;
+      border-radius: 14px;
+      background: rgba(110, 231, 255, 0.12);
+      border: 1px solid rgba(110, 231, 255, 0.3);
+      font-size: 26px;
+      font-weight: 800;
+    }
+    .findings {
+      display: grid;
+      gap: 18px;
+      margin-top: 18px;
+    }
+    .category {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      background: rgba(10, 15, 28, 0.72);
+    }
+    blockquote {
+      margin: 0 0 14px;
+      padding: 14px 16px;
+      border-left: 4px solid var(--accent);
+      background: rgba(110, 231, 255, 0.08);
+      border-radius: 0 12px 12px 0;
+      color: #dce8ff;
+    }
+    ul {
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+    li { margin: 8px 0; }
+    .sev-critical { color: var(--bad); font-weight: 700; }
+    .sev-major { color: #ffb86b; font-weight: 700; }
+    .sev-minor { color: var(--warn); font-weight: 700; }
+    .sev-suggest { color: #93c5fd; font-weight: 700; }
+    .subtle-box {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: rgba(15, 21, 36, 0.85);
+    }
+    .action-list li { margin-bottom: 10px; }
+    .summary {
+      margin-top: 18px;
+      padding: 22px;
+      border: 1px solid rgba(110, 231, 255, 0.22);
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(17, 24, 43, 0.96), rgba(8, 13, 24, 0.96));
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 18px;
+      align-items: start;
+    }
+    .score-lines div { margin: 7px 0; color: var(--muted); }
+    .ruling {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(251, 113, 133, 0.28);
+      background: rgba(251, 113, 133, 0.08);
+      font-weight: 700;
+    }
+    code {
+      font-family: "Consolas", "JetBrains Mono", monospace;
+      background: rgba(148, 163, 184, 0.12);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      border-radius: 6px;
+      padding: 1px 5px;
+      color: #d9e8ff;
+    }
+    .section-gap { margin-top: 18px; }
+    @media (max-width: 900px) {
+      .overview, .summary-grid { grid-template-columns: 1fr; }
+      .total-box { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>프로덕션 준비도 코드 감사</h1>
+      <p>브라우저와 데스크톱 셸을 함께 쓰는 이미지 정리 도구를 대상으로, 저장소 안의 소스·테스트·문서·설정·빌드 산출물 흔적까지 전수 검토해 실제 배포 관점의 리스크를 평가했다. 판단 기준은 도구 보유 여부가 아니라, 이 프로젝트의 가장 취약한 표면이 실제로 보호되고 있는지다.</p>
+    </section>
+
+    <section class="grid overview">
+      <div class="panel">
+        <h2>A. 개요 및 스택</h2>
+        <p>이 코드는 로컬 이미지 폴더를 읽어 가상 이름 변경, 가상 폴더 이동, EXIF 기반 분류를 수행한 뒤 마지막 단계에서 실제 파일 시스템에 반영하는 데스크톱 우선 워크벤치다. 호스팅형 서비스가 아니라 개인용 로컬 도구에 가깝지만, 실제 파일 쓰기와 Electron 패키징이 포함되어 있어 “로컬이라서 괜찮다”로 넘길 수 없는 안전 요구가 있다.</p>
+        <h3>감지된 기술</h3>
+        <div class="chips">
+          <span class="chip">TypeScript 5.8</span>
+          <span class="chip">React 18</span>
+          <span class="chip">Vite 5</span>
+          <span class="chip">Vitest 3</span>
+          <span class="chip">Electron 37</span>
+          <span class="chip">Tailwind CSS 3</span>
+          <span class="chip">Radix UI / shadcn 계열 래퍼</span>
+          <span class="chip">File System Access API</span>
+        </div>
+        <h3>검증된 정량 지표</h3>
+        <ul>
+          <li>소스 파일: 97개. 산출 기준은 <code>src</code>와 <code>electron</code> 아래의 <code>.ts</code>, <code>.tsx</code>, <code>.js</code>, <code>.mjs</code>, <code>.css</code> 파일이다.</li>
+          <li>총 소스 라인: 9,740줄. 이 중 앱/라이브러리 코드는 8,851줄, 테스트는 797줄이다.</li>
+          <li>테스트 파일: 8개, 테스트 케이스: 29개. 근거는 <code>src/test</code>와 실제 <code>vitest run</code> 결과다.</li>
+          <li>대형 파일: 300줄 초과 파일이 최소 8개이며, 핵심 상태 저장 훅 <code>src/hooks/useImageStore.ts</code>는 524줄, EXIF 파서는 <code>src/lib/exif.ts</code> 450줄, 우측 작업대는 <code>src/components/viewer/RenameWorkbench.tsx</code> 402줄이다.</li>
+          <li>커밋 수: 산정 불가. 현재 작업본에는 <code>.git</code> 디렉터리가 없어 커밋 이력과 브랜치 이력을 검증할 수 없었다.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h2>B. 점수표</h2>
+        <div class="total-box">
+          <div>
+            <div class="muted">가중 총점</div>
+            <div class="big">5.3 / 10</div>
+          </div>
+          <div class="grade">C</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>범주</th>
+              <th>가중치</th>
+              <th>점수</th>
+              <th>가중 점수</th>
+              <th>한 줄 요약</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>가독성·수정 용이성</td>
+              <td>20%</td>
+              <td class="score">6.0</td>
+              <td>1.20</td>
+              <td>핵심 흐름은 읽히지만 생성 래퍼와 대형 훅이 진입 비용을 올린다.</td>
+            </tr>
+            <tr>
+              <td>견고성·오류 회복력</td>
+              <td>20%</td>
+              <td class="score">6.0</td>
+              <td>1.20</td>
+              <td>부분 실패와 충돌 검사는 있으나 실제 파일 쓰기 경로가 원자적이지 않다.</td>
+            </tr>
+            <tr>
+              <td>보안 태세</td>
+              <td>15%</td>
+              <td class="score">3.0</td>
+              <td>0.45</td>
+              <td>Electron 샌드박스를 끄는 설정이 데스크톱 앱 치고 너무 느슨하다.</td>
+            </tr>
+            <tr>
+              <td>검증·정확성 보증</td>
+              <td>20%</td>
+              <td class="score">6.0</td>
+              <td>1.20</td>
+              <td>핵심 훅 테스트는 제법 좋지만 타입·CI·통합 검증이 비어 있다.</td>
+            </tr>
+            <tr>
+              <td>아키텍처·구조 건전성</td>
+              <td>15%</td>
+              <td class="score">5.5</td>
+              <td>0.83</td>
+              <td>기능 분리는 시작됐지만 상태 중심축이 한 파일에 과도하게 모인다.</td>
+            </tr>
+            <tr>
+              <td>의존성·환경 건전성</td>
+              <td>10%</td>
+              <td class="score">4.5</td>
+              <td>0.45</td>
+              <td>락파일·패키지 관리자·외부 폰트·과다한 UI 래퍼가 재현성을 깎는다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>C. 핵심 발견</h2>
+      <div class="findings">
+        <section class="category">
+          <blockquote>Anchoring — Best: 이 프로젝트 규모에서는 새 엔지니어가 파일 시스템 쓰기, EXIF 파싱, 이름 변경 워크플로를 몇 개의 명확한 모듈만 따라가며 수정할 수 있어야 한다. Worst: 상태, 화면, 파일 작업, 파생 계산이 서로 뒤엉켜 어느 기능을 건드려도 대형 파일 여러 개를 동시에 해석해야 한다. Current: 핵심 흐름은 훅과 뷰로 분리돼 있지만 실제 위험 표면이 <code>src/hooks/useImageStore.ts</code>, <code>src/lib/exif.ts</code>, <code>src/components/viewer/RenameWorkbench.tsx</code> 같은 대형 파일에 집중돼 있어 중간 수준을 넘기지 못한다. → Score: 6.0/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 실제 제품 로직의 중심축이 너무 크다. <code>src/hooks/useImageStore.ts</code>는 상태 저장, 충돌 계산, 폴더 열기, 이동, 적용, 선택 상태를 모두 책임지고, <code>src/pages/Index.tsx</code>는 300줄이 넘는 props 조립 허브다. 기능 추가 시 이 두 파일의 변경 반경이 계속 커질 가능성이 높다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 빠른 UI 조립] 생성된 UI 래퍼가 과도하다. <code>src/components/ui</code> 아래 49개 파일이 있으나 앱 코드에서 실제로 직접 소비하는 것은 <code>button</code>, <code>dialog</code>, <code>input</code>, <code>label</code>, <code>separator</code>, <code>sheet</code>, <code>skeleton</code>, <code>sonner</code>, <code>toast</code>, <code>toaster</code>, <code>toggle</code>, <code>tooltip</code> 정도다. 탐색 잡음이 크고 실제 구조를 처음 읽는 사람을 헷갈리게 만든다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [OVERSIGHT] 읽기 전용 템플릿 찌꺼기가 남아 있다. <code>src/App.css</code>의 기본 Vite 예제 스타일과 <code>src/pages/NotFound.tsx</code>의 영어 UI는 현재 앱 톤과 분리돼 있으며, 왜 남겨뒀는지 설명도 없다.</li>
+          </ul>
+          <h3>AI 생성 코드 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Over-Specification</strong>: 생성형 보일러플레이트 성격의 UI 래퍼가 넓게 깔려 있다. 위치는 <code>src/components/ui/*.tsx</code>, 빈도는 다수다. 실제 리스크는 런타임 버그보다 탐색 비용과 유지보수 분산이다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Bugs Déjà-Vu</strong>: 같은 <code>buildFileFromImage</code> 로직이 <code>src/hooks/useExifFilters.ts</code>, <code>src/hooks/useIndexUiState.ts</code>, <code>src/components/viewer/rename-workbench/useTagListEditor.ts</code>에 반복된다. 지금은 작은 중복이지만 blob 처리 정책이 바뀌면 세 군데를 동시에 맞춰야 한다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 실제 파일을 쓰는 앱이라면 충돌 검사, 권한 실패, 부분 실패, 복구 메시지가 파일 시스템 경로 전반에서 일관되게 작동해야 한다. Worst: 실패가 조용히 삼켜지거나, 중간에 쓰기 일부만 반영돼 사용자 폴더를 불일치 상태로 남긴다. Current: 권한·충돌·부분 실패 메시지와 로그는 갖췄고 테스트도 있지만, 실제 쓰기 경로가 임시 파일·롤백 없이 진행돼 운영 안전성은 아직 하드닝 전 단계다. → Score: 6.0/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 실제 반영이 원자적이지 않다. <code>src/hooks/useImageApply.ts:131-139</code>는 대상 파일에 먼저 쓰고 그다음 원본을 삭제한다. 쓰기 성공 후 삭제가 실패하면 복제본과 원본이 동시에 남고, 중간 상태를 되돌릴 방법도 없다. 로컬 툴이라도 파일 조작 기능이라면 이 구간은 임시 파일·검증·교체 단계로 쪼개야 한다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 사용자 데이터 보존 우선] 부분 실패를 보존하는 전략 자체는 합리적이다. <code>src/hooks/useImageApply.ts:167-178</code>와 <code>src/test/useImageApply.test.ts</code>는 성공분을 유지하고 실패분만 <code>log.txt</code>로 남긴다. 다만 이 전략을 선택했다면 UI에서 “중간 성공” 상태를 더 분명히 드러내야 한다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [OVERSIGHT] 입력 경계 검증이 일관되지는 않다. 예를 들어 <code>src/hooks/useImageStore.ts:346-370</code>의 <code>createFolder</code>는 공백 이름 방어가 UI에만 기대고, 훅 자체에서는 빈 문자열을 차단하지 않는다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 이 프로젝트의 실제 공격 표면은 로컬 파일 입력과 Electron 렌더러 격리이므로, 샌드박스와 외부 리소스 정책이 보수적으로 잠겨 있어야 한다. Worst: 데스크톱 셸 권한을 느슨하게 열어 두고 렌더러를 사실상 신뢰한 채 배포한다. Current: 네트워크 API나 인증 표면은 거의 없지만 Electron 하드닝이 무너져 있어, 공격 표면이 좁다는 사실만으로는 낮은 점수를 피할 수 없다. → Score: 3.0/10</blockquote>
+          <p><strong>실제 공격 표면 식별:</strong> 외부 사용자 계정이나 서버 API는 없지만, 앱은 드래그 앤 드롭 파일, 폴더 핸들, EXIF/PNG 메타데이터, Electron 렌더러 콘솔 메시지, 로컬 파일 쓰기 권한을 처리한다. 즉 “오프라인 도구”이지 “공격 표면 없음”은 아니다.</p>
+          <ul>
+            <li><span class="sev-critical">🔴 Critical</span> [OVERSIGHT] Electron 보안 기본값을 정면으로 해제했다. <code>electron/main.mjs:10-13</code>의 <code>disable-gpu-sandbox</code>, <code>no-sandbox</code>, 그리고 <code>electron/main.mjs:44-49</code>의 <code>sandbox: false</code> 조합은 로컬 파일을 다루는 데스크톱 앱에서 가장 먼저 막아야 할 영역이다. <code>contextIsolation</code>만 켜둔 것으로는 충분하지 않다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 런타임이 외부 폰트 CDN에 의존한다. <code>src/index.css:1</code>의 Google Fonts <code>@import</code>는 패키징 후에도 외부 네트워크 요청을 만들고, 오프라인 환경과 프라이버시 기대를 깨뜨린다. “로컬 도구”라는 제품 성격과도 맞지 않는다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 로컬 추적성] <code>electron/main.mjs:65-67</code>과 <code>src/hooks/useImageApply.ts:155-164</code>는 콘솔 메시지와 파일 이동 기록을 로컬 로그에 남긴다. 운영 추적에는 좋지만, 파일명과 경로가 민감할 수 있는 사용자 데이터라는 점을 문서나 UI에서 고지하지 않는다.</li>
+          </ul>
+          <h3>우선 취약점 적용성</h3>
+          <ul>
+            <li><strong>SQL Injection (CWE-89):</strong> N/A. 데이터베이스나 SQL 문자열 조립이 없다.</li>
+            <li><strong>XSS (CWE-79/80):</strong> 제한적으로만 해당. <code>src/components/ui/chart.tsx:69-85</code>의 <code>dangerouslySetInnerHTML</code>는 내부 차트 테마 CSS 생성용이라 현재 앱 경로에서는 사용자 입력으로 이어지지 않는다.</li>
+            <li><strong>Log Injection (CWE-117):</strong> 낮은 적용성. 로그에는 주로 파일명·경로가 쓰이며, 이 프로젝트의 주 실행 환경인 Windows에서는 개행 포함 파일명이 일반적으로 불가능하다.</li>
+            <li><strong>SSRF:</strong> N/A. 사용자 제공 URL로 서버 측 요청을 보내는 코드가 없다.</li>
+            <li><strong>Insecure Deserialization:</strong> N/A. 불러오는 것은 로컬 JSON 템플릿뿐이며, 단순 구조 검증 후 메모리 상태에만 반영한다.</li>
+          </ul>
+          <p class="muted">의존성 CVE는 오프라인 작업 환경이라 외부 취약점 데이터베이스 대조를 수행하지 못했다. 따라서 “알려진 CVE 없음”이라고 단정하지 않는다.</p>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 파일 조작, 이름 생성, EXIF 파싱 같은 핵심 경로는 자동 테스트와 정적 검증이 함께 묶여 변경 시 즉시 깨져야 한다. Worst: 테스트가 거의 없거나, 있어도 앱이 단순 실행된다는 사실만 확인하고 논리를 보장하지 못한다. Current: 훅 단위 테스트와 실제 빌드·린트·테스트 실행 근거는 좋지만 타입 검사가 느슨하고 CI가 비어 있어 “지금은 통과” 이상을 장담하기 어렵다. → Score: 6.0/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 자동 검증은 로컬 스크립트에만 묶여 있다. <code>package.json</code>에는 <code>test</code>, <code>lint</code>, <code>build</code>가 있지만, 저장소에는 <code>.github</code>나 다른 CI 설정이 없다. 즉 현재 확인된 통과 결과가 다음 변경에도 강제된다는 보장이 없다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 타입 시스템을 거의 방어선으로 쓰지 않는다. <code>tsconfig.app.json:15-25</code>와 <code>tsconfig.json:3-13</code>는 <code>strict: false</code>, <code>noImplicitAny: false</code>, <code>strictNullChecks: false</code>다. 테스트가 잡지 못하는 상태 누락·널 처리 실수는 그대로 배포될 수 있다.</li>
+            <li><span class="sev-suggest">🔵 Suggestion</span> [TRADE-OFF: 빠른 핵심 검증 집중] 좋은 점도 분명하다. <code>src/test/useImageApply.test.ts</code>, <code>src/test/useImageStore.move.test.ts</code>, <code>src/test/useExifFilters.test.ts</code>, <code>src/test/useTagListEditor.test.ts</code>는 실제 위험이 큰 훅을 직접 검증하고, 이번 감사에서도 <code>npm run test</code>, <code>npm run lint</code>, <code>npm run build</code>가 실행됐다.</li>
+          </ul>
+          <h3>AI 생성 코드 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Fake Test Coverage</strong>: <code>src/test/example.test.ts</code>의 단일 <code>expect(true).toBe(true)</code>는 숫자를 부풀릴 뿐 제품 정확성에 기여하지 않는다. 빈도는 1건이지만, 유지하면 테스트 개수 해석을 흐린다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 화면, 파일 시스템, 파생 계산, 템플릿 편집이 서로 느슨하게 연결돼 기능 추가 시 수정 범위가 예측 가능해야 한다. Worst: 새 기능 하나마다 상태 저장 훅과 페이지 조립 파일과 작업대 UI를 동시에 크게 뜯어야 한다. Current: 훅 분리와 유틸 분리는 시작됐지만, 실제 변경의 충격파가 여전히 중앙 상태 훅과 대형 작업대 컴포넌트로 모이기 때문에 구조 건전성은 평균보다 약간 낮다. → Score: 5.5/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 아키텍처의 중심이 단일 훅으로 쏠려 있다. <code>src/hooks/useImageStore.ts</code>는 트리 모델, 선택 상태, 이름 충돌, 적용 가능성, 폴더 이동, 실제 반영을 모두 안고 있어 변화가 누적될수록 “상태 파일이 곧 도메인 전체”가 된다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 브라우저 우선 파일 작업] 파일 시스템 설정과 UI 문자열이 코드에 직접 박혀 있다. <code>src/hooks/useImageStore.ts</code>, <code>electron/main.mjs</code>, <code>vite.config.ts</code>에서 경계값과 동작 모드가 하드코딩돼 있어 환경별 조정은 빌드 전 수정에 의존한다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [OVERSIGHT] 루트 페이지가 컨테이너 역할을 넘어 세부 조립 부담을 많이 진다. <code>src/pages/Index.tsx</code>에서 툴바, 탐색기, 캔버스, 검색, 적용 미리보기, EXIF 대화상자, 컨텍스트 메뉴를 모두 직접 연결해 신규 패널 추가 시 수정 범위가 크다.</li>
+          </ul>
+          <h3>AI 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Return of Monoliths</strong>: 기능이 늘 때마다 새 서브훅을 추가하면서도 최종 오케스트레이션은 큰 상위 컴포넌트와 큰 저장 훅에 남겨두는 패턴이 보인다. 위치는 <code>src/hooks/useImageStore.ts</code>, <code>src/components/viewer/RenameWorkbench.tsx</code>, <code>src/pages/Index.tsx</code>다. 리스크는 리팩터링 없이 계속 누적될 경우 폭발 반경이 급격히 커진다는 점이다.</li>
+          </ul>
+        </section>
+
+        <section class="category">
+          <blockquote>Anchoring — Best: 다른 개발자가 같은 저장소를 받아 설치·실행·패키징을 재현할 때, 패키지 관리자와 락파일과 문서와 런타임 자산이 하나의 일관된 경로를 제시해야 한다. Worst: 서로 다른 락파일과 오래된 산출물과 외부 런타임 의존성이 섞여 어떤 조합이 정답인지 알 수 없다. Current: 로컬에서 빌드와 테스트는 되지만 환경 서사가 일관되지 않고 락파일도 맞지 않아 재현성 점수는 낮다. → Score: 4.5/10</blockquote>
+          <ul>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 락파일과 매니페스트가 서로 다르다. <code>package-lock.json:2-9</code>는 패키지 이름을 <code>image-workbench</code>, 버전을 <code>0.0.0</code>으로 기록하지만 <code>package.json:2-5</code>는 <code>asset-image-workbench</code>, <code>0.1.0</code>이다. 이 정도 차이면 의존성 스냅샷 신뢰도가 바로 떨어진다.</li>
+            <li><span class="sev-major">🟠 Major</span> [OVERSIGHT] 패키지 관리자 전략이 정리되지 않았다. 루트에 <code>bun.lock</code>, <code>bun.lockb</code>, <code>package-lock.json</code>이 동시에 있고, README도 <code>npm</code>과 <code>bun</code>을 병렬 권장한다. 팀 환경으로 넘어가면 “무엇이 기준인가”부터 어긋난다.</li>
+            <li><span class="sev-minor">🟡 Minor</span> [TRADE-OFF: 빠른 프로토타이핑] README는 설치·실행·빌드 흐름을 최소한 설명하지만, <code>.github</code>, <code>docs</code>, PR 템플릿, 변경 이력 파일은 없다. 또한 빌드 출력에서 <code>Browserslist</code> 데이터가 9개월 오래됐다는 경고도 확인됐다.</li>
+          </ul>
+          <h3>AI 안티패턴</h3>
+          <ul>
+            <li><span class="sev-minor">🟡 Minor</span> <strong>Package Hallucination</strong>은 보이지 않았다. 다만 실제 import 그래프에 비해 의존성 폭이 과하다. 예를 들어 <code>@tanstack/react-query</code>는 <code>src/App.tsx</code>에서 공급자만 만들고 실제 쿼리 사용처가 없으며, <code>recharts</code>, <code>react-hook-form</code>, <code>zod</code>, <code>cmdk</code>, <code>vaul</code> 등도 현재 제품 흐름과 직접 연결된 근거가 약하다. 리스크는 설치 시간과 보안 관리 표면 증가다.</li>
+          </ul>
+        </section>
+      </div>
+    </section>
+
+    <section class="panel section-gap">
+      <h2>D. 실행 계획</h2>
+      <ol class="action-list">
+        <li><strong>하드닝</strong> — <code>electron/main.mjs</code>에서 <code>no-sandbox</code>, <code>disable-gpu-sandbox</code>, <code>sandbox: false</code>를 제거하고 필요한 브리지 권한만 <code>preload</code>로 노출하라.</li>
+        <li><strong>하드닝</strong> — <code>src/hooks/useImageApply.ts</code>의 파일 반영을 임시 파일 쓰기 → 검증 → 원본 교체 → 실패 시 롤백 가능 흐름으로 바꿔 실제 폴더 손상 위험을 줄여라.</li>
+        <li><strong>빠른 개선</strong> — <code>tsconfig</code>를 단계적으로 강화해 최소한 <code>strictNullChecks</code>와 <code>noImplicitAny</code>부터 켜고, 새 코드에 대한 타입 예외를 줄여라.</li>
+        <li><strong>빠른 개선</strong> — <code>package.json</code>과 <code>package-lock.json</code>의 이름·버전을 맞추고, <code>npm</code> 또는 <code>bun</code> 중 하나만 공식 경로로 남겨라.</li>
+        <li><strong>빠른 개선</strong> — <code>src/index.css</code>의 외부 폰트 <code>@import</code>를 제거하고 폰트를 번들에 포함하거나 시스템 폰트로 대체하라.</li>
+        <li><strong>전략 과제</strong> — <code>useImageStore</code>를 파일 적용 도메인, 트리 조작 도메인, 뷰어 선택 상태로 분해해 기능 추가 시 중심 훅의 폭발 반경을 줄여라.</li>
+        <li><strong>전략 과제</strong> — 로컬 통과에만 의존하지 말고 CI에 <code>lint</code>, <code>test</code>, <code>build</code>를 묶어 최소 배포 게이트를 만들어라.</li>
+      </ol>
+    </section>
+
+    <section class="summary">
+      <div class="summary-grid">
+        <div>
+          <h2>E. 코드베이스 성격</h2>
+          <p>핵심 사용자 문제는 정확히 붙잡았고 훅 단위 검증도 해놨지만, 프로토타입 속도를 우선한 흔적이 구조·환경·Electron 보안 하드닝보다 앞서 있는 코드베이스다.</p>
+
+          <h2>F. 최종 판정</h2>
+          <p>이 프로젝트는 로컬 이미지 묶음을 검토하고 이름과 위치를 가상으로 조정한 뒤 마지막에 실제 폴더에 반영하는 데스크톱형 작업 도구다. 서버 제품은 아니지만 사용자 파일을 직접 만지는 만큼, 안정성과 데스크톱 보안 태세를 가볍게 볼 수 없는 범주에 속한다.</p>
+          <p><strong>스택 요약:</strong> TypeScript, React, Vite, Vitest, Electron, Tailwind CSS.</p>
+          <div class="score-lines">
+            <div>가독성·수정 용이성 6.0 — 읽히지만 중심축이 크다.</div>
+            <div>견고성·오류 회복력 6.0 — 충돌 검사는 있으나 파일 반영이 거칠다.</div>
+            <div>보안 태세 3.0 — 데스크톱 샌드박스가 풀려 있다.</div>
+            <div>검증·정확성 보증 6.0 — 핵심 훅 테스트는 좋지만 강제력이 약하다.</div>
+            <div>아키텍처·구조 건전성 5.5 — 분리는 시작됐지만 중심이 비대하다.</div>
+            <div>의존성·환경 건전성 4.5 — 재현성 서사가 일관되지 않다.</div>
+            <div><strong>가중 총점 5.3 / 10, 등급 C</strong></div>
+          </div>
+          <p>솔직히 말하면, 이 코드는 “아이디어 검증을 넘긴 괜찮은 개인용 툴”이지 “지금 바로 배포해도 마음 편한 제품”은 아니다. 좋은 점은 분명하다. 핵심 파일 작업과 이름 변경 흐름에 대한 테스트가 실제로 있고, 빌드와 린트도 현재는 통과하며, 사용자에게 변경을 마지막 단계까지 가상으로 유지하는 제품 판단도 좋다. 하지만 Electron 샌드박스를 꺼버린 순간 보안 점수는 급락하고, 파일 반영이 원자적이지 않은 순간 운영 신뢰도도 제한된다. 여기에 느슨한 타입 설정, 락파일 불일치, 과한 생성 UI 래퍼까지 겹치면 팀 개발이나 외부 배포로 확장할 때 발목을 잡는다.</p>
+          <div class="ruling">프로덕션 준비 판정: 지금 상태로는 배포 보류가 맞고, Electron 보안 하드닝과 파일 적용 경로 재설계가 선행되어야 한다.</div>
+        </div>
+        <div class="subtle-box">
+          <h2>감사 메모</h2>
+          <ul>
+            <li>실제 실행 검증: <code>npm run test</code> 통과, <code>npm run lint</code> 경고 7건, <code>npm run build</code> 통과.</li>
+            <li>문서 자산: <code>README.md</code>는 기본 실행 흐름을 제공하지만 <code>docs</code>, <code>.github</code>, 변경 이력 파일은 없다.</li>
+            <li>저장소 메타데이터: 현재 작업본에는 <code>.git</code>이 없어 커밋 수와 히스토리 품질은 검증할 수 없었다.</li>
+            <li>생성 산출물: <code>dist</code>와 <code>release</code> 디렉터리가 작업본에 존재한다. 소스 판단의 주 근거로 쓰지는 않았지만 환경 혼선 신호로 반영했다.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
