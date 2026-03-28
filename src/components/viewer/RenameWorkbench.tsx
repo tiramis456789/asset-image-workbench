@@ -50,6 +50,8 @@ export default function RenameWorkbench({
 }: RenameWorkbenchProps) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const [manualName, setManualName] = useState('');
+  const [replaceFrom, setReplaceFrom] = useState('');
+  const [replaceTo, setReplaceTo] = useState('');
   const [targetMode, setTargetMode] = useState<RenameTargetMode>('current');
   const [moveTarget, setMoveTarget] = useState('__root__');
   const [newFolderName, setNewFolderName] = useState('');
@@ -93,7 +95,7 @@ export default function RenameWorkbench({
     setManualName,
     setStatus,
   });
-  const { targetSummary, applyManualRename, applyPreset, autoCleanupConflicts, applyMove } = useRenameWorkbenchActions({
+  const { targetSummary, applyManualRename, applyPreset, applyOneToOneReplace, applyUppercase, applyLowercase, applyTitleCase, autoCleanupConflicts, applyMove } = useRenameWorkbenchActions({
     currentImage,
     allImages,
     markedImageIds,
@@ -101,8 +103,9 @@ export default function RenameWorkbench({
     filteredImageIds,
     filteredCount,
     imageMap,
-    separator,
     manualName,
+    replaceFrom,
+    replaceTo,
     targetMode,
     moveTarget,
     newFolderName,
@@ -222,18 +225,39 @@ export default function RenameWorkbench({
             <section className="space-y-2">
               <h3 className="font-display text-foreground">{S.quickPreset}</h3>
               <div className="grid grid-cols-1 gap-2">
+                <div className="space-y-2 rounded-sm border border-border bg-background/30 p-2">
+                  <p className="text-muted-foreground">{S.replaceOneToOne}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={replaceFrom}
+                      onChange={(e) => setReplaceFrom(e.target.value)}
+                      placeholder={S.replaceFrom}
+                      className="w-full rounded-sm border border-border bg-background/50 px-2 py-1.5 text-foreground outline-none focus:border-primary/60"
+                    />
+                    <input
+                      value={replaceTo}
+                      onChange={(e) => setReplaceTo(e.target.value)}
+                      placeholder={S.replaceTo}
+                      className="w-full rounded-sm border border-border bg-background/50 px-2 py-1.5 text-foreground outline-none focus:border-primary/60"
+                    />
+                  </div>
+                  <button onClick={applyOneToOneReplace} className="w-full rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
+                    {S.applyReplace}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={applyUppercase} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
+                    {S.uppercaseName}
+                  </button>
+                  <button onClick={applyLowercase} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
+                    {S.lowercaseName}
+                  </button>
+                </div>
+                <button onClick={applyTitleCase} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
+                  {S.titleCaseName}
+                </button>
                 <button onClick={() => applyPreset('spaces_to_underscores')} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
                   {S.spacesToUnderscores}
-                </button>
-                <button onClick={() => applyPreset('name_outfit_emotion')} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
-                  {separator === 'space'
-                    ? '\uC774\uB984 \uBCF5\uC7A5 \uAC10\uC815 -> \uC774\uB984 \uBCF5\uC7A5 \uAC10\uC815'
-                    : '\uC774\uB984 \uBCF5\uC7A5 \uAC10\uC815 -> \uC774\uB984_\uBCF5\uC7A5_\uAC10\uC815'}
-                </button>
-                <button onClick={() => applyPreset('name_emotion')} className="rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
-                  {separator === 'space'
-                    ? '\uC774\uB984 \uAC10\uC815 -> \uC774\uB984 \uAC10\uC815'
-                    : '\uC774\uB984 \uAC10\uC815 -> \uC774\uB984_\uAC10\uC815'}
                 </button>
               </div>
             </section>

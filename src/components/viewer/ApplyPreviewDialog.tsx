@@ -43,11 +43,10 @@ export default function ApplyPreviewDialog({
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-3 border-b border-border px-5 py-4 text-xs">
+        <div className="grid grid-cols-4 gap-3 border-b border-border px-5 py-4 text-xs">
           <Card label={'\uCD1D \uBCC0\uACBD'} value={summary.total} />
           <Card label={'\uC774\uB984 \uBCC0\uACBD'} value={summary.renameCount} />
           <Card label={'\uC704\uCE58 \uBCC0\uACBD'} value={summary.moveCount} />
-          <Card label={'\uC801\uC6A9 \uBD88\uAC00'} value={summary.unappliableCount} />
           <Card label={'\uCC28\uB2E8 \uD56D\uBAA9'} value={summary.blockedCount} />
         </div>
 

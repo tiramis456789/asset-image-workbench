@@ -13,6 +13,7 @@ interface ImageCanvasProps {
   onZoomChange: (zoom: number) => void;
   onAddImages: (files: File[]) => void;
   onAddEntriesAsTree: (entries: FileSystemEntry[]) => Promise<void>;
+  onAddWritableFoldersFromPaths: (paths: string[]) => Promise<void>;
   onNext: () => void;
   onPrev: () => void;
   gridConfig: { rows: number; cols: number };
@@ -34,6 +35,7 @@ export default function ImageCanvas({
   onZoomChange,
   onAddImages,
   onAddEntriesAsTree,
+  onAddWritableFoldersFromPaths,
   onNext,
   onPrev,
   gridConfig,
@@ -61,6 +63,11 @@ export default function ImageCanvas({
       }
     },
     [onAddImages]
+  );
+
+  const resolveDroppedPath = useCallback(
+    (file: File) => file.path ?? window.assetImageWorkbench?.getPathForFile(file) ?? null,
+    []
   );
 
   const handleWheel = useCallback(
@@ -102,6 +109,19 @@ export default function ImageCanvas({
       setDragOver(false);
 
       const droppedFiles = Array.from(e.dataTransfer.files);
+      const droppedPaths = droppedFiles.map((file) => resolveDroppedPath(file)).filter((value): value is string => Boolean(value));
+      if (window.assetImageWorkbench && droppedPaths.length > 0) {
+        const inspected = await window.assetImageWorkbench.inspectPaths(droppedPaths);
+        const directoryPaths = inspected.filter((entry) => entry.kind === 'directory').map((entry) => entry.path);
+        if (directoryPaths.length > 0) {
+          await onAddWritableFoldersFromPaths(Array.from(new Set(directoryPaths)));
+
+          const imageFiles = droppedFiles.filter((file) => file.type.startsWith('image/'));
+          if (imageFiles.length > 0) addDroppedFiles(imageFiles);
+          return;
+        }
+      }
+
       const imageFiles = droppedFiles.filter((file) => file.type.startsWith('image/'));
       if (imageFiles.length > 0) {
         addDroppedFiles(imageFiles);
@@ -121,7 +141,7 @@ export default function ImageCanvas({
       const files = items.map((item) => item.getAsFile()).filter(Boolean) as File[];
       addDroppedFiles(files);
     },
-    [addDroppedFiles, onAddEntriesAsTree]
+    [addDroppedFiles, onAddEntriesAsTree, onAddWritableFoldersFromPaths, resolveDroppedPath]
   );
 
   useEffect(() => {

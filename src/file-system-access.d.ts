@@ -28,4 +28,23 @@ type FileSystemHandle = FileSystemFileHandle | FileSystemDirectoryHandle;
 
 interface Window {
   showDirectoryPicker?: () => Promise<FileSystemDirectoryHandle>;
+  assetImageWorkbench?: {
+    openDirectoryDialog: () => Promise<string | null>;
+    getPathForFile: (file: File) => string;
+    readDirectory: (dirPath: string) => Promise<Array<{ name: string; kind: 'file' | 'directory'; path: string; type?: string }>>;
+    readFile: (
+      filePath: string
+    ) => Promise<{ name: string; type: string; lastModified: number; size: number; buffer: ArrayBuffer }>;
+    inspectPaths: (
+      paths: string[]
+    ) => Promise<Array<{ path: string; kind: 'file' | 'directory' | 'missing'; type?: string }>>;
+    ensureDirectory: (dirPath: string) => Promise<void>;
+    writeFile: (filePath: string, data: ArrayBuffer | string) => Promise<void>;
+    removeEntry: (targetPath: string, options?: { recursive?: boolean }) => Promise<void>;
+    fileExists: (filePath: string) => Promise<boolean>;
+  };
+}
+
+interface File {
+  path?: string;
 }

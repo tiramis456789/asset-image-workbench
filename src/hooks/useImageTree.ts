@@ -3,6 +3,12 @@ import type { FileNode, FolderNode, FolderOption, ImageFile, TreeNode } from './
 type FsFileHandle = FileSystemFileHandle;
 type FsDirectoryHandle = FileSystemDirectoryHandle;
 
+const SUPPORTED_IMAGE_EXTENSIONS = /\.(apng|avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/i;
+
+function isSupportedImageSource(type: string | undefined, name: string) {
+  return Boolean(type?.startsWith('image/') || SUPPORTED_IMAGE_EXTENSIONS.test(name));
+}
+
 function isFileHandle(handle: FileSystemHandle): handle is FsFileHandle {
   return handle.kind === 'file';
 }
@@ -60,8 +66,9 @@ export const updateTreeFiles = (nodes: TreeNode[], fn: (node: FileNode) => FileN
 export function imageFromFile(
   file: File,
   folderPath = '',
-  extra?: { applyRootId?: string | null; fileHandle?: FsFileHandle | null; applyReady?: boolean }
+  extra?: { applyRootId?: string | null; fileHandle?: FsFileHandle | null; applyReady?: boolean; filePath?: string | null }
 ): ImageFile {
+  const inferredApplyReady = Boolean(extra?.fileHandle || extra?.filePath || file.path);
   return {
     id: crypto.randomUUID(),
     name: file.name,
@@ -74,7 +81,8 @@ export function imageFromFile(
     lastModified: file.lastModified,
     applyRootId: extra?.applyRootId ?? null,
     fileHandle: extra?.fileHandle ?? null,
-    applyReady: extra?.applyReady ?? false,
+    applyReady: extra?.applyReady ?? inferredApplyReady,
+    filePath: extra?.filePath ?? file.path ?? null,
   };
 }
 
@@ -84,7 +92,7 @@ export async function buildTreeFromEntries(entries: FileSystemEntry[], parentPar
   for (const entry of entries) {
     if (entry.isFile) {
       const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject)).catch(() => null);
-      if (file && file.type.startsWith('image/')) {
+      if (file && isSupportedImageSource(file.type, file.name)) {
         const image = imageFromFile(file, parentParts.join('/'));
         nodes.push({ id: image.id, name: image.name, type: 'file', image });
       }
@@ -139,23 +147,95 @@ export async function buildTreeFromHandle(
   if (!values) throw new Error('directory handle iteration is not supported');
 
   for await (const child of values.call(handle)) {
-    if (isFileHandle(child)) {
-      const file = await child.getFile();
-      if (!file.type.startsWith('image/')) continue;
+    try {
+      if (isFileHandle(child)) {
+        const file = await child.getFile();
+        if (!isSupportedImageSource(file.type, file.name)) continue;
 
-      const image = imageFromFile(file, relativePath, { applyRootId, fileHandle: child, applyReady: true });
-      children.push({ id: image.id, name: image.name, type: 'file', image });
-      continue;
+        const image = imageFromFile(file, relativePath, { applyRootId, fileHandle: child, applyReady: true });
+        children.push({ id: image.id, name: image.name, type: 'file', image });
+        continue;
+      }
+
+      if (!isDirectoryHandle(child)) continue;
+      const childPath = relativePath ? `${relativePath}/${child.name}` : child.name;
+      children.push(await buildTreeFromHandle(child, applyRootId, childPath));
+    } catch (error) {
+      console.warn('Failed to read child from writable handle', child.name, error);
     }
-
-    if (!isDirectoryHandle(child)) continue;
-    const childPath = relativePath ? `${relativePath}/${child.name}` : child.name;
-    children.push(await buildTreeFromHandle(child, applyRootId, childPath));
   }
 
   return {
     id: crypto.randomUUID(),
     name: handle.name,
+    type: 'folder',
+    children,
+    expanded: true,
+    relativePath: isRoot ? '' : relativePath,
+    applyRootId,
+    isRoot,
+  };
+}
+
+function getDesktopApi() {
+  const api = window.assetImageWorkbench;
+  if (!api) throw new Error('desktop file API is not available');
+  return api;
+}
+
+function basenameOf(targetPath: string) {
+  const normalized = targetPath.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[\\/]/);
+  return parts[parts.length - 1] || normalized;
+}
+
+export async function imageFromPath(filePath: string, folderPath = '', extra?: { applyRootId?: string | null }): Promise<ImageFile | null> {
+  const api = getDesktopApi();
+  const file = await api.readFile(filePath);
+  if (!isSupportedImageSource(file.type, file.name)) return null;
+
+  const browserFile = new File([file.buffer], file.name, {
+    type: file.type,
+    lastModified: file.lastModified,
+  });
+
+  return imageFromFile(browserFile, folderPath, {
+    applyRootId: extra?.applyRootId ?? null,
+    applyReady: true,
+    filePath,
+  });
+}
+
+export async function buildTreeFromPath(
+  dirPath: string,
+  applyRootId: string,
+  relativePath = '',
+  isRoot = false
+): Promise<FolderNode> {
+  const api = getDesktopApi();
+  const entries = await api.readDirectory(dirPath);
+  const children: TreeNode[] = [];
+
+  for (const child of entries) {
+    try {
+      if (child.kind === 'file') {
+        if (!isSupportedImageSource(child.type, child.name)) continue;
+        const image = await imageFromPath(child.path, relativePath, { applyRootId });
+        if (!image) continue;
+        children.push({ id: image.id, name: image.name, type: 'file', image });
+        continue;
+      }
+
+      const childPath = relativePath ? `${relativePath}/${child.name}` : child.name;
+      children.push(await buildTreeFromPath(child.path, applyRootId, childPath));
+    } catch (error) {
+      console.warn('Failed to read child from desktop path', child.path, error);
+    }
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    name: basenameOf(dirPath),
     type: 'folder',
     children,
     expanded: true,

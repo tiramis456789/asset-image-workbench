@@ -7,6 +7,7 @@ import {
   addNodesToFolder,
   buildTreeFromEntries,
   buildTreeFromHandle,
+  buildTreeFromPath,
   findFolderNode,
   findTreeNode,
   flatImages,
@@ -37,6 +38,7 @@ export interface ImageFile {
   applyRootId: string | null;
   fileHandle: FsFileHandle | null;
   applyReady: boolean;
+  filePath?: string | null;
 }
 
 export interface FolderNode {
@@ -91,12 +93,23 @@ export interface ApplySummary {
 interface SourceRoot {
   id: string;
   name: string;
-  handle: FsDirectoryHandle;
+  handle?: FsDirectoryHandle;
+  path?: string;
 }
 
 export type TreeNode = FolderNode | FileNode;
 
 const rootLabel = (path: string) => path || '(\uB8E8\uD2B8)';
+const normalizeRootPath = (targetPath: string) => targetPath.replace(/[\\/]+/g, '/').replace(/\/$/, '').toLowerCase();
+const dirnameOf = (targetPath: string) => targetPath.replace(/[\\/][^\\/]+$/, '');
+const basenameOf = (targetPath: string) => {
+  const normalized = targetPath.replace(/[\\/]+$/, '');
+  const parts = normalized.split(/[\\/]/);
+  return parts[parts.length - 1] || normalized;
+};
+const resolveFilePath = (file: File) => file.path ?? window.assetImageWorkbench?.getPathForFile(file) ?? null;
+const isSupportedImageFile = (file: File) =>
+  file.type.startsWith('image/') || /\.(apng|avif|bmp|gif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(file.name || file.path || '');
 
 export function useImageStore() {
   const [tree, setTree] = useState<TreeNode[]>([]);
@@ -192,9 +205,6 @@ export function useImageStore() {
 
   const pendingChangeCount = pendingRenames.length + pendingMoves.length;
   const applySummary = useMemo<ApplySummary>(() => {
-    const unappliableCount = allImages.filter(
-      (image) => (image.name !== image.originalName || image.currentFolderPath !== image.originalFolderPath) && !image.applyReady
-    ).length;
     const blockedCount = applyBlockers.size + pendingRenames.filter((item) => item.hasConflict).length;
 
     if (pendingChangeCount === 0) {
@@ -209,24 +219,12 @@ export function useImageStore() {
       };
     }
 
-    if (unappliableCount > 0) {
-      return {
-        total: pendingChangeCount,
-        renameCount: pendingRenames.length,
-        moveCount: pendingMoves.length,
-        unappliableCount,
-        blockedCount,
-        ready: false,
-        message: '\uC2E4\uC81C \uC801\uC6A9\uC740 "\uC4F0\uAE30 \uAC00\uB2A5\uD55C \uD3F4\uB354 \uC5F4\uAE30"\uB85C \uBD88\uB7EC\uC628 \uC774\uBBF8\uC9C0\uC5D0\uC11C\uB9CC \uC0AC\uC6A9\uD560 \uC218 \uC788\uC2B5\uB2C8\uB2E4.',
-      };
-    }
-
     if (blockedCount > 0) {
       return {
         total: pendingChangeCount,
         renameCount: pendingRenames.length,
         moveCount: pendingMoves.length,
-        unappliableCount,
+        unappliableCount: 0,
         blockedCount,
         ready: false,
         message: '\uC774\uB984 \uCDA9\uB3CC \uB610\uB294 \uAD50\uCC28 \uC774\uB3D9 \uCDA9\uB3CC\uC774 \uC788\uC5B4 \uC2E4\uC81C \uC801\uC6A9 \uC804\uC5D0 \uC218\uC815\uC774 \uD544\uC694\uD569\uB2C8\uB2E4.',
@@ -242,24 +240,87 @@ export function useImageStore() {
       ready: true,
       message: '\uC2E4\uC81C \uC801\uC6A9 \uC900\uBE44\uAC00 \uB05D\uB0AC\uC2B5\uB2C8\uB2E4.',
     };
-  }, [allImages, applyBlockers, pendingChangeCount, pendingMoves.length, pendingRenames]);
+  }, [applyBlockers, pendingChangeCount, pendingMoves.length, pendingRenames]);
 
   const addImages = useCallback((files: File[]) => {
+    const existingRootIds = new Map(
+      sourceRoots
+        .filter((root): root is SourceRoot & { path: string } => Boolean(root.path))
+        .map((root) => [normalizeRootPath(root.path), root.id])
+    );
+    const pendingRoots = new Map<string, SourceRoot>();
     const newNodes: TreeNode[] = files
-      .filter((file) => file.type.startsWith('image/'))
+      .filter((file) => isSupportedImageFile(file))
       .map((file) => {
-        const image = imageFromFile(file);
+        const filePath = resolveFilePath(file);
+        let applyRootId: string | null = null;
+
+        if (window.assetImageWorkbench && filePath) {
+          const rootPath = dirnameOf(filePath);
+          const rootKey = normalizeRootPath(rootPath);
+          const knownRootId = existingRootIds.get(rootKey) ?? pendingRoots.get(rootKey)?.id ?? null;
+
+          if (knownRootId) {
+            applyRootId = knownRootId;
+          } else {
+            applyRootId = crypto.randomUUID();
+            pendingRoots.set(rootKey, {
+              id: applyRootId,
+              name: basenameOf(rootPath),
+              path: rootPath,
+            });
+          }
+        }
+
+        const image = imageFromFile(file, '', {
+          applyRootId,
+          applyReady: Boolean(applyRootId),
+          filePath,
+        });
         return { id: image.id, name: image.name, type: 'file', image };
       });
+
+    if (pendingRoots.size > 0) {
+      setSourceRoots((prev) => [...prev, ...pendingRoots.values()]);
+    }
 
     setTree((prev) => {
       const updated = [...prev, ...newNodes];
       setFirstImageOnAdd(flatImages(prev).length > 0, newNodes.length);
       return updated;
     });
-  }, [setFirstImageOnAdd]);
+  }, [setFirstImageOnAdd, sourceRoots]);
 
   const addWritableFolder = useCallback(async () => {
+    const desktopApi = window.assetImageWorkbench;
+    if (desktopApi) {
+      let selectedDirPath: string | null = null;
+      try {
+        selectedDirPath = await desktopApi.openDirectoryDialog();
+        if (!selectedDirPath) {
+          return { ok: false, message: '\uD3F4\uB354 \uC5F4\uAE30\uAC00 \uCDE8\uC18C\uB418\uC5C8\uAC70\uB098 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.' };
+        }
+
+        const applyRootId = crypto.randomUUID();
+        const rootNode = await buildTreeFromPath(selectedDirPath, applyRootId, '', true);
+
+        setSourceRoots((prev) => [...prev, { id: applyRootId, name: rootNode.name, path: selectedDirPath }]);
+        setTree((prev) => {
+          const updated = [...prev, rootNode];
+          setFirstImageOnAdd(flatImages(prev).length > 0, flatImages([rootNode]).length);
+          return updated;
+        });
+
+        return { ok: true, message: `"${rootNode.name}" \uD3F4\uB354\uB97C \uC2E4\uC81C \uC801\uC6A9 \uAC00\uB2A5\uD55C \uC0C1\uD0DC\uB85C \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.` };
+      } catch (error) {
+        console.error('Failed to open folder from desktop API', selectedDirPath, error);
+        return {
+          ok: false,
+          message: error instanceof Error ? `\uD3F4\uB354 \uC5F4\uAE30 \uC2E4\uD328: ${error.message}` : '\uD3F4\uB354 \uC5F4\uAE30\uAC00 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.',
+        };
+      }
+    }
+
     const showDirectoryPicker = window.showDirectoryPicker;
     if (!showDirectoryPicker) {
       return { ok: false, message: '\uC774 \uBE0C\uB77C\uC6B0\uC800\uC5D0\uC11C\uB294 \uC4F0\uAE30 \uAC00\uB2A5\uD55C \uD3F4\uB354 \uC5F4\uAE30\uB97C \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.' };
@@ -282,6 +343,32 @@ export function useImageStore() {
       return { ok: false, message: '\uD3F4\uB354 \uC5F4\uAE30\uAC00 \uCDE8\uC18C\uB418\uC5C8\uAC70\uB098 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.' };
     }
   }, [setFirstImageOnAdd]);
+
+  const addWritableFoldersFromPaths = useCallback(
+    async (dirPaths: string[]) => {
+      if (!window.assetImageWorkbench || dirPaths.length === 0) return;
+
+      const roots = await Promise.all(
+        dirPaths.map(async (dirPath) => {
+          const applyRootId = crypto.randomUUID();
+          const rootNode = await buildTreeFromPath(dirPath, applyRootId, '', true);
+          return { applyRootId, dirPath, rootNode };
+        })
+      );
+
+      setSourceRoots((prev) => [
+        ...prev,
+        ...roots.map(({ applyRootId, dirPath, rootNode }) => ({ id: applyRootId, name: rootNode.name, path: dirPath })),
+      ]);
+      setTree((prev) => {
+        const nextNodes = roots.map(({ rootNode }) => rootNode);
+        const updated = [...prev, ...nextNodes];
+        setFirstImageOnAdd(flatImages(prev).length > 0, flatImages(nextNodes).length);
+        return updated;
+      });
+    },
+    [setFirstImageOnAdd]
+  );
 
   const addTreeNodes = useCallback((nodes: TreeNode[]) => {
     setTree((prev) => {
@@ -405,7 +492,10 @@ export function useImageStore() {
     }
 
     const target = targetFolderId ? findFolderNode(tree, targetFolderId) : null;
-    if (target && nodes.some((node) => node.image.applyReady && node.image.applyRootId !== target.applyRootId)) {
+    if (
+      target &&
+      nodes.some((node) => node.image.applyRootId && target.applyRootId && node.image.applyRootId !== target.applyRootId)
+    ) {
       return { movedCount: 0, error: '\uC11C\uB85C \uB2E4\uB978 \uC2E4\uC81C \uD3F4\uB354 \uCD9C\uCC98 \uC0AC\uC774\uC758 \uC774\uB3D9\uC740 \uC544\uC9C1 \uC9C0\uC6D0\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.' };
     }
 
@@ -455,6 +545,7 @@ export function useImageStore() {
               originalFolderPath: update.originalFolderPath,
               currentFolderPath: update.originalFolderPath,
               fileHandle: update.fileHandle,
+              filePath: update.filePath ?? node.image.filePath ?? null,
             },
           };
         })
@@ -487,6 +578,7 @@ export function useImageStore() {
     applySummary,
     addImages,
     addWritableFolder,
+    addWritableFoldersFromPaths,
     addTreeNodes,
     addEntriesAsTree,
     selectImage: (index: number) => selectImage(index, images.length),

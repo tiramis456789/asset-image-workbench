@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,6 +92,19 @@ function createWindow() {
 
   window.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 }
+
+ipcMain.handle('aiw:open-directory-dialog', async () => {
+  const focusedWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null;
+  const result = await dialog.showOpenDialog(focusedWindow, {
+    properties: ['openDirectory'],
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
+});
 
 app.whenReady().then(() => {
   writeLog('app-ready', {

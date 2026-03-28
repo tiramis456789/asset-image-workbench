@@ -4,7 +4,8 @@ type FsDirectoryHandle = FileSystemDirectoryHandle;
 type ApplySourceRoot = {
   id: string;
   name: string;
-  handle: FsDirectoryHandle;
+  handle?: FsDirectoryHandle;
+  path?: string;
 };
 
 type ApplyImage = {
@@ -15,6 +16,7 @@ type ApplyImage = {
   currentFolderPath: string;
   applyRootId: string | null;
   fileHandle: FsFileHandle | null;
+  filePath?: string | null;
 };
 
 type ApplyResult = {
@@ -25,7 +27,8 @@ type ApplyResult = {
     {
       originalName: string;
       originalFolderPath: string;
-      fileHandle: FsFileHandle;
+      fileHandle: FsFileHandle | null;
+      filePath?: string | null;
     }
   >;
 };
@@ -127,8 +130,29 @@ async function appendLog(root: FsDirectoryHandle, lines: string[]) {
   await writable.close();
 }
 
+function getDesktopApi() {
+  return window.assetImageWorkbench ?? null;
+}
+
+function joinPath(...parts: string[]) {
+  return parts
+    .filter(Boolean)
+    .map((part, index) => (index === 0 ? part.replace(/[\\/]+$/, '') : part.replace(/^[\\/]+|[\\/]+$/g, '')))
+    .join('/');
+}
+
+async function appendDesktopLog(rootPath: string, lines: string[]) {
+  const api = getDesktopApi();
+  if (!api) throw new Error('desktop file API is not available');
+
+  const logPath = joinPath(rootPath, 'log.txt');
+  const existing = (await api.fileExists(logPath)) ? await api.readFile(logPath).then((file) => new TextDecoder().decode(file.buffer)) : '';
+  await api.writeFile(logPath, `${existing}${existing ? '\n' : ''}${lines.join('\n')}\n`);
+}
+
 export async function applyImageChanges(changed: ApplyImage[], sourceRoots: ApplySourceRoot[]): Promise<ApplyResult> {
   for (const root of sourceRoots) {
+    if (!root.handle) continue;
     const permission = root.handle.requestPermission
       ? await root.handle.requestPermission({ mode: 'readwrite' })
       : 'granted';
@@ -142,13 +166,14 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
     {
       originalName: string;
       originalFolderPath: string;
-      fileHandle: FsFileHandle;
+      fileHandle: FsFileHandle | null;
+      filePath?: string | null;
     }
   >();
   const logEntries: ApplyLogEntry[] = [];
 
   for (const image of changed) {
-    if (!image.applyRootId || !image.fileHandle) {
+    if (!image.applyRootId || (!image.fileHandle && !image.filePath)) {
       return { ok: false, message: '\uC2E4\uC81C \uC801\uC6A9 \uAC00\uB2A5\uD55C \uD30C\uC77C \uC815\uBCF4\uAC00 \uBD80\uC871\uD569\uB2C8\uB2E4.' };
     }
 
@@ -157,8 +182,16 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
       return { ok: false, message: '\uC2E4\uC81C \uC801\uC6A9\uC6A9 \uB8E8\uD2B8 \uD3F4\uB354\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.' };
     }
 
-    const targetDir = await ensureDir(root.handle, image.currentFolderPath, true);
-    const targetExists = await fileExists(targetDir, image.name);
+    let targetExists = false;
+    if (root.handle) {
+      const targetDir = await ensureDir(root.handle, image.currentFolderPath, true);
+      targetExists = await fileExists(targetDir, image.name);
+    } else if (root.path) {
+      const api = getDesktopApi();
+      if (!api) return { ok: false, message: '\uB370\uC2A4\uD06C\uD0D1 \uD30C\uC77C API\uB97C \uCC3E\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.' };
+      await api.ensureDirectory(joinPath(root.path, image.currentFolderPath));
+      targetExists = await api.fileExists(joinPath(root.path, image.currentFolderPath, image.name));
+    }
     if (targetExists) {
       return {
         ok: false,
@@ -171,7 +204,7 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
   let failureCount = 0;
 
   for (const image of changed) {
-    if (!image.applyRootId || !image.fileHandle) {
+    if (!image.applyRootId || (!image.fileHandle && !image.filePath)) {
       return { ok: false, message: '\uC2E4\uC81C \uC801\uC6A9 \uAC00\uB2A5\uD55C \uD30C\uC77C \uC815\uBCF4\uAC00 \uBD80\uC871\uD569\uB2C8\uB2E4.' };
     }
 
@@ -188,6 +221,39 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
     let originalRemoved = false;
 
     try {
+      if (root.path && image.filePath) {
+        const api = getDesktopApi();
+        if (!api) throw new Error('desktop file API is not available');
+
+        const originalPath = joinPath(root.path, image.originalFolderPath, image.originalName);
+        const targetDirPath = joinPath(root.path, image.currentFolderPath);
+        const tempPath = joinPath(targetDirPath, createTempName(image.id, image.name));
+        const targetPath = joinPath(targetDirPath, image.name);
+        const sourceFile = await api.readFile(image.filePath);
+
+        await api.ensureDirectory(targetDirPath);
+        await api.writeFile(tempPath, sourceFile.buffer);
+        await api.writeFile(targetPath, sourceFile.buffer);
+        finalWritten = true;
+        await api.removeEntry(tempPath);
+        await api.removeEntry(originalPath);
+        originalRemoved = true;
+
+        updates.set(image.id, {
+          originalName: image.name,
+          originalFolderPath: image.currentFolderPath,
+          fileHandle: image.fileHandle as FsFileHandle,
+          filePath: targetPath,
+        });
+        logEntries.push({ rootId: root.id, status: 'OK', from: fromPath, to: toPath });
+        successCount += 1;
+        continue;
+      }
+
+      if (!root.handle || !image.fileHandle) {
+        throw new Error('apply target is missing writable handle');
+      }
+
       const originalDir = await ensureDir(root.handle, image.originalFolderPath, false);
       targetDir = await ensureDir(root.handle, image.currentFolderPath, true);
       const sourceFile = await image.fileHandle.getFile();
@@ -207,6 +273,7 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
         originalName: image.name,
         originalFolderPath: image.currentFolderPath,
         fileHandle: targetHandle,
+        filePath: image.filePath ?? null,
       });
       logEntries.push({ rootId: root.id, status: 'OK', from: fromPath, to: toPath });
       successCount += 1;
@@ -236,7 +303,11 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
       const base = [`[${timestamp}] ${entry.status}`, `FROM ${entry.from}`, `TO   ${entry.to}`];
       return entry.reason ? [...base, `REASON ${entry.reason}`, ''] : [...base, ''];
     });
-    await appendLog(root.handle, lines);
+    if (root.handle) {
+      await appendLog(root.handle, lines);
+    } else if (root.path) {
+      await appendDesktopLog(root.path, lines);
+    }
   }
 
   if (failureCount > 0) {

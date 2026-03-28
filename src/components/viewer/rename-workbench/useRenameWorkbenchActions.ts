@@ -2,8 +2,7 @@ import { useCallback, useMemo } from 'react';
 
 import { FolderOption, ImageFile } from '@/hooks/useImageStore';
 import { applyRenamePresetToName, getPathKey, RenamePreset, splitNameParts } from '@/lib/rename';
-
-import { NameSeparator, S } from './shared';
+import { S } from './shared';
 
 export type RenameTargetMode = 'all' | 'marked' | 'current' | 'filtered';
 
@@ -15,8 +14,9 @@ type RenameWorkbenchActionParams = {
   filteredImageIds: string[];
   filteredCount: number;
   imageMap: Map<string, ImageFile>;
-  separator: NameSeparator;
   manualName: string;
+  replaceFrom: string;
+  replaceTo: string;
   targetMode: RenameTargetMode;
   moveTarget: string;
   newFolderName: string;
@@ -35,8 +35,9 @@ export function useRenameWorkbenchActions({
   filteredImageIds,
   filteredCount,
   imageMap,
-  separator,
   manualName,
+  replaceFrom,
+  replaceTo,
   targetMode,
   moveTarget,
   newFolderName,
@@ -46,7 +47,7 @@ export function useRenameWorkbenchActions({
   setStatus,
   setNewFolderName,
 }: RenameWorkbenchActionParams) {
-  const separatorValue = separator === 'space' ? ' ' : '_';
+  const quickPresetSeparator = '_';
 
   const targetSummary = useMemo(
     () =>
@@ -107,21 +108,65 @@ export function useRenameWorkbenchActions({
 
   const applyPreset = useCallback(
     (preset: RenamePreset) => {
-      const changedCount = renameTargetImages((image) => applyRenamePresetToName(image.name, preset, separatorValue));
+      const changedCount = renameTargetImages((image) => applyRenamePresetToName(image.name, preset, quickPresetSeparator));
       const label =
         preset === 'spaces_to_underscores'
           ? S.spacesToUnderscores
           : preset === 'name_outfit_emotion'
-            ? separator === 'space'
-              ? '\uC774\uB984 \uBCF5\uC7A5 \uAC10\uC815'
-              : '\uC774\uB984_\uBCF5\uC7A5_\uAC10\uC815'
-            : separator === 'space'
-              ? '\uC774\uB984 \uAC10\uC815'
-              : '\uC774\uB984_\uAC10\uC815';
+            ? '\uC774\uB984_\uBCF5\uC7A5_\uAC10\uC815'
+            : '\uC774\uB984_\uAC10\uC815';
       setStatus(changedCount > 0 ? `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 ${label} \uD504\uB9AC\uC14B\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.` : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.');
     },
-    [renameTargetImages, separator, separatorValue, setStatus]
+    [quickPresetSeparator, renameTargetImages, setStatus]
   );
+
+  const applyOneToOneReplace = useCallback(() => {
+    const from = replaceFrom.trim();
+    if (!from) {
+      setStatus('\uCE58\uD658\uD560 \uAE30\uC874 \uB2E8\uC5B4\uB97C \uC785\uB825\uD574 \uC8FC\uC138\uC694.');
+      return;
+    }
+
+    const changedCount = renameTargetImages((image) => image.name.split(from).join(replaceTo));
+    setStatus(
+      changedCount > 0
+        ? `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 1:1 \uCE58\uD658\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`
+        : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'
+    );
+  }, [renameTargetImages, replaceFrom, replaceTo, setStatus]);
+
+  const applyCaseTransform = useCallback(
+    (mode: 'upper' | 'lower') => {
+      const changedCount = renameTargetImages((image) => {
+        const { base, extension } = splitNameParts(image.name);
+        const transformedBase = mode === 'upper' ? base.toUpperCase() : base.toLowerCase();
+        return `${transformedBase}${extension}`;
+      });
+
+      setStatus(
+        changedCount > 0
+          ? `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 ${mode === 'upper' ? '\uB300\uBB38\uC790' : '\uC18C\uBB38\uC790'} \uC804\uD658\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`
+          : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'
+      );
+    },
+    [renameTargetImages, setStatus]
+  );
+
+  const applyUppercase = useCallback(() => applyCaseTransform('upper'), [applyCaseTransform]);
+  const applyLowercase = useCallback(() => applyCaseTransform('lower'), [applyCaseTransform]);
+  const applyTitleCase = useCallback(() => {
+    const changedCount = renameTargetImages((image) => {
+      const { base, extension } = splitNameParts(image.name);
+      const transformedBase = base.replace(/[A-Za-z]+/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+      return `${transformedBase}${extension}`;
+    });
+
+    setStatus(
+      changedCount > 0
+        ? `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 \uB2E8\uC5B4\uBCC4 \uCCAB \uAE00\uC790 \uB300\uBB38\uC790 \uC804\uD658\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`
+        : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'
+    );
+  }, [renameTargetImages, setStatus]);
 
   const autoCleanupConflicts = useCallback(() => {
     const changedImages = allImages.filter(
@@ -198,9 +243,12 @@ export function useRenameWorkbenchActions({
 
   return {
     targetSummary,
-    separatorValue,
     applyManualRename,
     applyPreset,
+    applyOneToOneReplace,
+    applyUppercase,
+    applyLowercase,
+    applyTitleCase,
     autoCleanupConflicts,
     applyMove,
   };

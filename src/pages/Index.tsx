@@ -161,6 +161,7 @@ const Index = () => {
           onZoomChange={store.setZoom}
           onAddImages={store.addImages}
           onAddEntriesAsTree={store.addEntriesAsTree}
+          onAddWritableFoldersFromPaths={store.addWritableFoldersFromPaths}
           onNext={store.nextImage}
           onPrev={store.prevImage}
           gridConfig={store.gridConfig}
