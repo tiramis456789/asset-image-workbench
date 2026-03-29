@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyRenamePresetToName, getPathKey, normalizeImageName, splitNameParts } from '@/lib/rename';
+import { applyBulkReplaceRules, applyRenamePresetToName, getPathKey, normalizeImageName, parseBulkReplaceRules, splitNameParts } from '@/lib/rename';
 
 describe('rename utilities', () => {
   describe('splitNameParts', () => {
@@ -59,6 +59,34 @@ describe('rename utilities', () => {
   describe('getPathKey', () => {
     it('normalizes folder path and file name for conflict checks', () => {
       expect(getPathKey('Folder/Sub', 'Image.PNG')).toBe('folder/sub/image.png');
+    });
+  });
+
+  describe('bulk replace rules', () => {
+    it('parses arrow-based rules and skips blank lines', () => {
+      expect(parseBulkReplaceRules('acting coy -> coy\n\nhappy smile -> happysmile')).toEqual({
+        rules: [
+          { from: 'acting coy', to: 'coy' },
+          { from: 'happy smile', to: 'happysmile' },
+        ],
+        invalidLines: [],
+      });
+    });
+
+    it('accepts unicode arrows used in pasted rule lists', () => {
+      expect(parseBulkReplaceRules('acting coy → coy\nhappy smile → happysmile')).toEqual({
+        rules: [
+          { from: 'acting coy', to: 'coy' },
+          { from: 'happy smile', to: 'happysmile' },
+        ],
+        invalidLines: [],
+      });
+    });
+
+    it('reports invalid lines and applies rules in order', () => {
+      const parsed = parseBulkReplaceRules('acting coy => coy\nacting coy -> coy\ncoy smile -> coysmile');
+      expect(parsed.invalidLines).toEqual([1]);
+      expect(applyBulkReplaceRules('hero acting coy smile.png', parsed.rules)).toBe('hero coysmile.png');
     });
   });
 });

@@ -52,6 +52,7 @@ export default function RenameWorkbench({
   const [manualName, setManualName] = useState('');
   const [replaceFrom, setReplaceFrom] = useState('');
   const [replaceTo, setReplaceTo] = useState('');
+  const [bulkReplaceText, setBulkReplaceText] = useState('');
   const [targetMode, setTargetMode] = useState<RenameTargetMode>('current');
   const [moveTarget, setMoveTarget] = useState('__root__');
   const [newFolderName, setNewFolderName] = useState('');
@@ -95,7 +96,18 @@ export default function RenameWorkbench({
     setManualName,
     setStatus,
   });
-  const { targetSummary, applyManualRename, applyPreset, applyOneToOneReplace, applyUppercase, applyLowercase, applyTitleCase, autoCleanupConflicts, applyMove } = useRenameWorkbenchActions({
+  const {
+    targetSummary,
+    applyManualRename,
+    applyPreset,
+    applyOneToOneReplace,
+    applyBulkReplace,
+    applyUppercase,
+    applyLowercase,
+    applyTitleCase,
+    autoCleanupConflicts,
+    applyMove,
+  } = useRenameWorkbenchActions({
     currentImage,
     allImages,
     markedImageIds,
@@ -106,6 +118,7 @@ export default function RenameWorkbench({
     manualName,
     replaceFrom,
     replaceTo,
+    bulkReplaceText,
     targetMode,
     moveTarget,
     newFolderName,
@@ -243,6 +256,19 @@ export default function RenameWorkbench({
                   </div>
                   <button onClick={applyOneToOneReplace} className="w-full rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
                     {S.applyReplace}
+                  </button>
+                </div>
+                <div className="space-y-2 rounded-sm border border-border bg-background/30 p-2">
+                  <p className="text-muted-foreground">{S.bulkReplace}</p>
+                  <textarea
+                    value={bulkReplaceText}
+                    onChange={(e) => setBulkReplaceText(e.target.value)}
+                    placeholder={S.bulkReplacePlaceholder}
+                    rows={8}
+                    className="w-full resize-y rounded-sm border border-border bg-background/50 px-2 py-1.5 text-foreground outline-none focus:border-primary/60"
+                  />
+                  <button onClick={applyBulkReplace} className="w-full rounded-sm border border-border py-1.5 text-foreground hover:border-primary/50">
+                    {S.applyBulkReplace}
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">

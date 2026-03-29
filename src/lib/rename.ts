@@ -1,4 +1,5 @@
 export type RenamePreset = 'spaces_to_underscores' | 'name_outfit_emotion' | 'name_emotion';
+export type BulkReplaceRule = { from: string; to: string };
 
 export function getPathKey(folderPath: string, name: string) {
   return `${folderPath.toLocaleLowerCase()}/${name.toLocaleLowerCase()}`;
@@ -44,4 +45,35 @@ export function applyRenamePresetToName(name: string, preset: RenamePreset, sepa
 
   if (words.length < 2) return name;
   return `${words.slice(0, -1).join(separator)}${separator}${words.at(-1)!}${extension}`;
+}
+
+export function parseBulkReplaceRules(input: string) {
+  const rules: BulkReplaceRule[] = [];
+  const invalidLines: number[] = [];
+
+  input.split(/\r?\n/).forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    const match = trimmed.match(/^(.*?)\s*(->|→)\s*(.*?)$/);
+    if (!match) {
+      invalidLines.push(index + 1);
+      return;
+    }
+
+    const from = match[1].trim();
+    const to = match[3].trim();
+    if (!from) {
+      invalidLines.push(index + 1);
+      return;
+    }
+
+    rules.push({ from, to });
+  });
+
+  return { rules, invalidLines };
+}
+
+export function applyBulkReplaceRules(name: string, rules: BulkReplaceRule[]) {
+  return rules.reduce((currentName, rule) => currentName.split(rule.from).join(rule.to), name);
 }

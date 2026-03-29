@@ -1,7 +1,7 @@
 {
   "name": "asset-image-workbench",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Desktop-first workbench for reviewing, renaming, and reorganizing generated image collections.",
   "author": "tira",
   "type": "module",

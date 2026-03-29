@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 
 import { FolderOption, ImageFile } from '@/hooks/useImageStore';
-import { applyRenamePresetToName, getPathKey, RenamePreset, splitNameParts } from '@/lib/rename';
+import { applyBulkReplaceRules, applyRenamePresetToName, getPathKey, parseBulkReplaceRules, RenamePreset, splitNameParts } from '@/lib/rename';
 import { S } from './shared';
 
 export type RenameTargetMode = 'all' | 'marked' | 'current' | 'filtered';
@@ -17,6 +17,7 @@ type RenameWorkbenchActionParams = {
   manualName: string;
   replaceFrom: string;
   replaceTo: string;
+  bulkReplaceText: string;
   targetMode: RenameTargetMode;
   moveTarget: string;
   newFolderName: string;
@@ -38,6 +39,7 @@ export function useRenameWorkbenchActions({
   manualName,
   replaceFrom,
   replaceTo,
+  bulkReplaceText,
   targetMode,
   moveTarget,
   newFolderName,
@@ -134,6 +136,34 @@ export function useRenameWorkbenchActions({
         : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'
     );
   }, [renameTargetImages, replaceFrom, replaceTo, setStatus]);
+
+  const applyBulkReplace = useCallback(() => {
+    const { rules, invalidLines } = parseBulkReplaceRules(bulkReplaceText);
+    if (!rules.length) {
+      setStatus(
+        invalidLines.length > 0
+          ? `\uB2E4\uC911 \uCE58\uD658 \uADDC\uCE59\uC744 \uD574\uC11D\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. \uC904 ${invalidLines.join(', ')}\uC744 \uD655\uC778\uD574 \uC8FC\uC138\uC694.`
+          : '\uD55C \uC904\uC529 "A -> B" \uD615\uC2DD\uC73C\uB85C \uCE58\uD658 \uADDC\uCE59\uC744 \uC785\uB825\uD574 \uC8FC\uC138\uC694.'
+      );
+      return;
+    }
+
+    const changedCount = renameTargetImages((image) => applyBulkReplaceRules(image.name, rules));
+    if (changedCount > 0) {
+      setStatus(
+        invalidLines.length > 0
+          ? `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 \uB2E4\uC911 \uCE58\uD658\uC744 \uC801\uC6A9\uD588\uACE0, \uC904 ${invalidLines.join(', ')}\uC740 \uAC74\uB108\uB6F0\uC5C8\uC2B5\uB2C8\uB2E4.`
+          : `${changedCount}\uAC1C \uD56D\uBAA9\uC5D0 ${rules.length}\uAC1C \uB2E4\uC911 \uCE58\uD658 \uADDC\uCE59\uC744 \uC801\uC6A9\uD588\uC2B5\uB2C8\uB2E4.`
+      );
+      return;
+    }
+
+    setStatus(
+      invalidLines.length > 0
+        ? `\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC740 \uC5C6\uACE0, \uC904 ${invalidLines.join(', ')}\uC740 \uADDC\uCE59 \uD615\uC2DD\uC774 \uC544\uB2C8\uC5C8\uC2B5\uB2C8\uB2E4.`
+        : '\uBCC0\uACBD\uB41C \uD56D\uBAA9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.'
+    );
+  }, [bulkReplaceText, renameTargetImages, setStatus]);
 
   const applyCaseTransform = useCallback(
     (mode: 'upper' | 'lower') => {
@@ -246,6 +276,7 @@ export function useRenameWorkbenchActions({
     applyManualRename,
     applyPreset,
     applyOneToOneReplace,
+    applyBulkReplace,
     applyUppercase,
     applyLowercase,
     applyTitleCase,

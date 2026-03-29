@@ -70,6 +70,18 @@ function formatRelativePath(folderPath: string, name: string) {
   return folderPath ? `${folderPath}/${name}` : name;
 }
 
+function normalizeRelativePath(folderPath: string, name: string) {
+  return formatRelativePath(folderPath, name).replace(/[\\/]+/g, '/').toLowerCase();
+}
+
+function isCaseOnlyRename(image: ApplyImage) {
+  return (
+    normalizeRelativePath(image.originalFolderPath, image.originalName) ===
+      normalizeRelativePath(image.currentFolderPath, image.name) &&
+    formatRelativePath(image.originalFolderPath, image.originalName) !== formatRelativePath(image.currentFolderPath, image.name)
+  );
+}
+
 function formatLogTimestamp(date: Date) {
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(
@@ -183,6 +195,7 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
     }
 
     let targetExists = false;
+    const caseOnlyRename = isCaseOnlyRename(image);
     if (root.handle) {
       const targetDir = await ensureDir(root.handle, image.currentFolderPath, true);
       targetExists = await fileExists(targetDir, image.name);
@@ -192,7 +205,7 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
       await api.ensureDirectory(joinPath(root.path, image.currentFolderPath));
       targetExists = await api.fileExists(joinPath(root.path, image.currentFolderPath, image.name));
     }
-    if (targetExists) {
+    if (targetExists && !caseOnlyRename) {
       return {
         ok: false,
         message: `"${formatRelativePath(image.currentFolderPath, image.name)}" \uD30C\uC77C\uC774 \uC774\uBBF8 \uC2E4\uC81C \uD3F4\uB354\uC5D0 \uC874\uC7AC\uD574 \uB36E\uC5B4\uC4F0\uAE30 \uC704\uD5D8\uC73C\uB85C \uC801\uC6A9\uC744 \uC911\uB2E8\uD588\uC2B5\uB2C8\uB2E4.`,
@@ -215,6 +228,7 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
 
     const fromPath = formatRelativePath(image.originalFolderPath, image.originalName);
     const toPath = formatRelativePath(image.currentFolderPath, image.name);
+    const caseOnlyRename = isCaseOnlyRename(image);
     let targetDir: FsDirectoryHandle | null = null;
     let tempName: string | undefined;
     let finalWritten = false;
@@ -233,11 +247,19 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
 
         await api.ensureDirectory(targetDirPath);
         await api.writeFile(tempPath, sourceFile.buffer);
-        await api.writeFile(targetPath, sourceFile.buffer);
-        finalWritten = true;
-        await api.removeEntry(tempPath);
-        await api.removeEntry(originalPath);
-        originalRemoved = true;
+        if (caseOnlyRename) {
+          await api.removeEntry(originalPath);
+          originalRemoved = true;
+          await api.writeFile(targetPath, sourceFile.buffer);
+          finalWritten = true;
+          await api.removeEntry(tempPath);
+        } else {
+          await api.writeFile(targetPath, sourceFile.buffer);
+          finalWritten = true;
+          await api.removeEntry(tempPath);
+          await api.removeEntry(originalPath);
+          originalRemoved = true;
+        }
 
         updates.set(image.id, {
           originalName: image.name,
@@ -261,13 +283,24 @@ export async function applyImageChanges(changed: ApplyImage[], sourceRoots: Appl
       const tempHandle = await targetDir.getFileHandle(tempName, { create: true });
       await writeFileHandle(tempHandle, sourceFile);
 
-      const targetHandle = await targetDir.getFileHandle(image.name, { create: true });
-      await writeFileHandle(targetHandle, await tempHandle.getFile());
-      finalWritten = true;
-      await removeEntryIfExists(targetDir, tempName);
-      tempName = undefined;
-      await originalDir.removeEntry(image.originalName);
-      originalRemoved = true;
+      let targetHandle: FsFileHandle;
+      if (caseOnlyRename) {
+        await originalDir.removeEntry(image.originalName);
+        originalRemoved = true;
+        targetHandle = await targetDir.getFileHandle(image.name, { create: true });
+        await writeFileHandle(targetHandle, await tempHandle.getFile());
+        finalWritten = true;
+        await removeEntryIfExists(targetDir, tempName);
+        tempName = undefined;
+      } else {
+        targetHandle = await targetDir.getFileHandle(image.name, { create: true });
+        await writeFileHandle(targetHandle, await tempHandle.getFile());
+        finalWritten = true;
+        await removeEntryIfExists(targetDir, tempName);
+        tempName = undefined;
+        await originalDir.removeEntry(image.originalName);
+        originalRemoved = true;
+      }
 
       updates.set(image.id, {
         originalName: image.name,

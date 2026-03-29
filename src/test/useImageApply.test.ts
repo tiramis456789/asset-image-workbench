@@ -242,6 +242,47 @@ describe('applyImageChanges', () => {
     expect(root.rawHandle.readFileText('log.txt')).toContain('TO   next/done.png');
   });
 
+  it('allows case-only renames on desktop paths without treating the source file as a collision', async () => {
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const removeEntry = vi.fn().mockResolvedValue(undefined);
+    const fileExists = vi.fn(async (targetPath: string) => targetPath.endsWith('SMILING PROFESSOR_ADMIRING.webp'));
+    const readFile = vi.fn(async () => ({
+      name: 'smiling professor_admiring.webp',
+      type: 'image/webp',
+      lastModified: 1,
+      size: 10,
+      buffer: new TextEncoder().encode('image').buffer,
+    }));
+
+    window.assetImageWorkbench = {
+      openDirectoryDialog: vi.fn(),
+      getPathForFile: vi.fn(),
+      readDirectory: vi.fn(),
+      readFile,
+      inspectPaths: vi.fn(),
+      ensureDirectory: vi.fn().mockResolvedValue(undefined),
+      writeFile,
+      removeEntry,
+      fileExists,
+    };
+
+    const result = await applyImageChanges(
+      [
+        createImage({
+          name: 'SMILING PROFESSOR_ADMIRING.webp',
+          originalName: 'smiling professor_admiring.webp',
+          fileHandle: null,
+          filePath: 'C:/root/smiling professor_admiring.webp',
+        }),
+      ],
+      [{ id: 'root-1', name: 'root', path: 'C:/root' }]
+    );
+
+    expect(result.ok).toBe(true);
+    expect(removeEntry).toHaveBeenCalledWith('C:/root/smiling professor_admiring.webp');
+    expect(writeFile.mock.calls.some(([targetPath]) => targetPath === 'C:/root/SMILING PROFESSOR_ADMIRING.webp')).toBe(true);
+  });
+
   it('writes separate log entries per apply root', async () => {
     const rootA = createSourceRoot('root-a', ['a.png']);
     const rootB = {

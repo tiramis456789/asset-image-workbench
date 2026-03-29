@@ -40,9 +40,13 @@ export const S = {
   startLego: '\uB808\uACE0 \uC791\uC5C5 \uC2DC\uC791',
   quickPreset: '\uBE60\uB978 \uAD6C\uC870 \uD504\uB9AC\uC14B',
   replaceOneToOne: '1:1 \uCE58\uD658',
+  bulkReplace: '\uB2E4\uC911 \uCE58\uD658',
   replaceFrom: '\uAE30\uC874 \uB2E8\uC5B4',
   replaceTo: '\uBC14\uAFC0 \uB2E8\uC5B4',
   applyReplace: '\uCE58\uD658 \uC801\uC6A9',
+  bulkReplacePlaceholder:
+    'acting coy -> coy\nacting cute -> cute\nhappy smile -> happysmile',
+  applyBulkReplace: '\uB2E4\uC911 \uCE58\uD658 \uD55C\uBC88\uC5D0 \uC801\uC6A9',
   uppercaseName: '\uB300\uBB38\uC790',
   lowercaseName: '\uC18C\uBB38\uC790',
   titleCaseName: '\uB2E8\uC5B4\uBCC4 \uCCAB \uAE00\uC790 \uB300\uBB38\uC790',
